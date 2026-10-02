@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="NeverLate: Every Plaksha deadline in one calm timeline. Chrome extension for assignments, quizzes, and exams with live countdowns and quiet reminders." />
+  <meta name="theme-color" content="#f6f6f4" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="NeverLate" />
+  <meta property="og:title" content="NeverLate: know what's due before tonight" />
+  <meta property="og:description" content="Every Plaksha deadline in one calm timeline. Chrome extension with live countdowns, calendar export, and quiet reminders. 100% client-side." />
+  <meta property="og:url" content="https://yourarnav.github.io/neverlate-plaksha/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="NeverLate: every deadline, one calm timeline" />
+  <meta name="twitter:description" content="NeverLate puts your Plaksha LMS assignments, quizzes, and exams in one place. No portal digging. No 11:58 PM panic." />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "NeverLate",
+    "operatingSystem": "Chrome, Edge, Brave (Chromium)",
+    "applicationCategory": "UtilitiesApplication",
+    "offers": { "@type": "Offer", "price": "0" },
+    "author": { "@type": "Person", "name": "Arnav Attri" },
+    "description": "Fixed single-site academic deadline tracker for Plaksha LMS.",
+    "url": "https://yourarnav.github.io/neverlate-plaksha/"
+  }
+  </script>
+  <title>NeverLate: know what's due before tonight</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-red" aria-hidden="true"></div>
+  <div class="ambient ambient-purple" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="NeverLate home">
+      <span class="brand-mark" aria-hidden="true">
+        <span class="brand-ring brand-ring-red"></span>
+        <span class="brand-ring brand-ring-purple"></span>
+      </span>
+      <span>NeverLate</span>
+    </a>
+
+    <nav class="nav-links" aria-label="Primary navigation">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a class="nav-github" href="https://github.com/yourarnav/NeverLate-Plaksha" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- Hero Section -->
+    <section class="hero section-shell">
+      <div class="hero-copy reveal">
+        <div class="eyebrow"><span class="pulse-dot"></span> Plaksha LMS · Chrome MV3</div>
+        <h1>Every deadline.<br><span>One calm timeline.</span></h1>
+        <p class="hero-lede">NeverLate puts your Plaksha assignments, quizzes, and exams in one place with live countdowns and quiet reminders. No portal hunting. No account. Zero server strain.</p>
+
+        <div class="hero-actions" id="install">
+          <a class="install-command primary-download" href="NeverLate-Plaksha.zip" download aria-label="Download NeverLate extension ZIP">
+            <svg class="download-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <code>Download NeverLate v2.4.2</code>
+            <span class="copy-label">ZIP</span>
+          </a>
+          <button class="install-command secondary-terminal" type="button" data-copy="git clone https://github.com/yourarnav/NeverLate-Plaksha.git" aria-label="Copy Git clone command">
+            <span class="terminal-prompt">$</span>
+            <code>git clone yourarnav/NeverLate-Plaksha</code>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+
+        <div class="hero-meta" aria-label="Project details">
+          <span>100% Client-Side</span>
+          <span>Zero Telemetry</span>
+          <span>Plaksha LMS only</span>
+          <span>Manifest V3</span>
+        </div>
+      </div>
+
+      <div class="hero-visual reveal reveal-delay-1" aria-label="NeverLate extension preview">
+        <div class="visual-halo" aria-hidden="true"></div>
+
+        <!-- Popover Replica Card -->
+        <div class="popover-shot image-card">
+          <div class="mock-popover">
+            <div class="mock-popover-nav">
+              <div class="mock-nav-left">
+                <div class="mock-icon" aria-hidden="true"></div>
+                <div class="mock-meta-titles">
+                  <div class="mock-title">NeverLate</div>
+                  <div class="mock-sub">Arnav Attri • Plaksha University</div>
+                </div>
+              </div>
+              <div class="mock-nav-right">
+                <span class="mock-btn-sync">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                  </svg>
+                  Sync
+                </span>
+              </div>
+            </div>
+
+            <!-- Segmented Control -->
+            <div class="mock-segments">
+              <div class="mock-segment active">Deadlines <span class="mock-badge">3</span></div>
+              <div class="mock-segment">My Courses <span class="mock-badge-quiet">5</span></div>
+            </div>
+
+            <!-- Alerts Banner -->
+            <div class="mock-alerts-banner">
+              <div class="mock-alerts-text">
+                <span class="mock-alerts-dot"></span>
+                <span>Deadline Alerts: <strong>On</strong> · 8 AM &amp; 2h alerts</span>
+              </div>
+              <span class="mock-switch on"></span>
+            </div>
+
+            <!-- Timeline Deliverables -->
+            <div class="mock-timeline">
+              <!-- Item 1: Urgent -->
+              <div class="mock-item urgent">
+                <div class="mock-check-box" data-interactive-check title="Click to toggle Done">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="mock-item-body">
+                  <div class="mock-chips-row">
+                    <span class="mock-chip chip-assign">ASSIGNMENT</span>
+                    <span class="mock-chip chip-course">CS201</span>
+                    <span class="mock-pill pill-urgent">42m left</span>
+                  </div>
+                  <div class="mock-item-title">Problem Set 5: Balanced Trees</div>
+                  <div class="mock-item-date">Due Today • 11:59 PM</div>
+                </div>
+              </div>
+
+              <!-- Item 2: Exam -->
+              <div class="mock-item exam">
+                <div class="mock-check-box" data-interactive-check title="Click to toggle Done">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="mock-item-body">
+                  <div class="mock-chips-row">
+                    <span class="mock-chip chip-exam">MID-SEM</span>
+                    <span class="mock-chip chip-course">MATH102</span>
+                    <span class="mock-pill pill-calm">3 days left</span>
+                  </div>
+                  <div class="mock-item-title">Linear Algebra Examination</div>
+                  <div class="mock-item-date">Monday • 10:00 AM · Hall A203</div>
+                </div>
+              </div>
+
+              <!-- Item 3: Quiz -->
+              <div class="mock-item quiz">
+                <div class="mock-check-box" data-interactive-check title="Click to toggle Done">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="mock-item-body">
+                  <div class="mock-chips-row">
+                    <span class="mock-chip chip-quiz">QUIZ</span>
+                    <span class="mock-chip chip-course">AI3022</span>
+                    <span class="mock-pill pill-calm">5 days left</span>
+                  </div>
+                  <div class="mock-item-title">Neural Networks Mini-Quiz</div>
+                  <div class="mock-item-date">Wednesday • 5:00 PM</div>
+                </div>
+              </div>
+
+              <!-- Item 4: Completed -->
+              <div class="mock-item done is-completed">
+                <div class="mock-check-box checked" data-interactive-check title="Click to toggle Incomplete">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="mock-item-body">
+                  <div class="mock-chips-row">
+                    <span class="mock-chip chip-assign">ASSIGNMENT</span>
+                    <span class="mock-chip chip-course">ECON101</span>
+                    <span class="mock-pill pill-done">Completed</span>
+                  </div>
+                  <div class="mock-item-title struck">Policy Memo: Market Equilibrium</div>
+                  <div class="mock-item-date">Done · reminders suppressed</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Popover Footer -->
+            <div class="mock-popover-foot">
+              <span class="mock-foot-status"><span class="mock-dot-live"></span> Connected • Plaksha LMS</span>
+              <span class="mock-foot-time">Synced 2m ago</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="float-chip chip-urgent-float"><span class="dot dot-red"></span> 42m left · CS201</div>
+        <div class="float-chip chip-exam-float"><span class="dot dot-purple"></span> Mid-Sem · Hall A203</div>
+        <div class="float-chip chip-private-float"><span class="dot dot-green"></span> 100% Client-Side</div>
+      </div>
+    </section>
+
+    <!-- It does one job Section -->
+    <section class="statement section-shell reveal" id="how">
+      <p class="section-kicker">It does one job</p>
+      <h2>Two portals. One timeline.<br>Nothing else to manage.</h2>
+      <div class="limit-grid">
+        <article class="limit-card limit-sync">
+          <div class="mini-ring mini-ring-red" aria-hidden="true"></div>
+          <div>
+            <p class="limit-label">Silent Auto-Sync</p>
+            <h3>The background pulse.</h3>
+            <p>Runs quietly whenever Plaksha LMS finishes loading. It checks your session, updates the Chrome badge countdown, and respects strict server rate limits.</p>
+          </div>
+        </article>
+        <article class="limit-card limit-alerts">
+          <div class="mini-ring mini-ring-purple" aria-hidden="true"></div>
+          <div>
+            <p class="limit-label">Calm Reminders</p>
+            <h3>Alerts when they matter.</h3>
+            <p>An 8:00 AM morning brief of tomorrow's work, a 2-hour heads-up before submission, and a 7-day planning alert for exams. Never spammy.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Experience Section -->
+    <section class="experience section-shell reveal" id="features">
+      <div class="experience-image-wrap">
+        <div class="experience-showcase">
+          <div class="showcase-header">
+            <span class="showcase-chip">1-Click Export</span>
+            <span class="showcase-date">RFC 5545 Compliant</span>
+          </div>
+          <div class="calendar-preview-card">
+            <div class="cal-badge-row">
+              <span class="cal-provider apple">Apple Calendar</span>
+              <span class="cal-provider google">Google Calendar</span>
+              <span class="cal-provider outlook">Outlook 365</span>
+            </div>
+            <div class="cal-event-preview">
+              <div class="cal-title">CS201 — Problem Set 5: Balanced Trees</div>
+              <div class="cal-time">Thursday • 11:59 PM (with 2h alarm built-in)</div>
+              <div class="cal-link">Portal: lms.plaksha.edu.in/mod/assign/view.php?id=1482</div>
+            </div>
+            <div class="cal-action-pill">Export All Active Deadlines (.ics) ↗</div>
+          </div>
+        </div>
+      </div>
+      <div class="experience-copy">
+        <p class="section-kicker">Quiet until useful</p>
+        <h2>Look at the badge.<br>Go back to studying.</h2>
+        <p>NeverLate stays silent in your toolbar until you need it. It updates your badge with your pending count, shows countdown tooltips on hover, and lets you check work off like Apple Reminders.</p>
+        <div class="feature-lines">
+          <div><span>01</span><p><strong>At a glance.</strong> Your Chrome badge shows pending deliverable count; hover to see the next deadline and countdown string.</p></div>
+          <div><span>02</span><p><strong>One-click calendar export.</strong> Send any deadline to Google Calendar or Outlook 365, or export all active deadlines into Apple Calendar with 2-hour alarms.</p></div>
+          <div><span>03</span><p><strong>Apple Reminders checkmarks.</strong> Finished an assignment early? Click Done to strike it through. Alarms for completed work are silenced immediately.</p></div>
+          <div><span>04</span><p><strong>Offline manual deadlines.</strong> Add study groups, viva exams, or personal deliverables with custom classroom locations that survive Moodle logouts.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Native / Privacy Section -->
+    <section class="native section-shell" id="native">
+      <div class="native-intro reveal">
+        <p class="section-kicker">Built for students</p>
+        <h2>Private means private.</h2>
+        <p>NeverLate has no developer backend, no Firebase, and no database tracking what you submit. It runs entirely inside your browser.</p>
+      </div>
+      <div class="native-grid reveal reveal-delay-1">
+        <article class="native-card">
+          <span class="card-number">01</span>
+          <h3>Zero developer backend.</h3>
+          <p>No external telemetry, cloud database, or analytics trackers. Network requests go only to your university's Moodle portal.</p>
+          <div class="code-pill">100% Client-Side</div>
+        </article>
+        <article class="native-card">
+          <span class="card-number">02</span>
+          <h3>Ephemeral session key.</h3>
+          <p>The Moodle <code>sesskey</code> is held only transiently in memory for internal AJAX calls. Passwords and capability secrets are never stored.</p>
+          <div class="code-pill">Memory-Only Sesskey</div>
+        </article>
+        <article class="native-card">
+          <span class="card-number">03</span>
+          <h3>Server protection.</h3>
+          <p>Multi-tiered throttling (10s manual, 45s auto attempt throttle, 120m cache cooldown) and exponential backoff protect LMS servers from strain.</p>
+          <div class="code-pill">Load Conscious</div>
+        </article>
+      </div>
+    </section>
+
+    <!-- The smaller question Section -->
+    <section class="answer section-shell reveal">
+      <div class="answer-inner">
+        <div class="answer-rings" aria-hidden="true">
+          <span class="answer-ring answer-ring-red"></span>
+          <span class="answer-ring answer-ring-purple"></span>
+        </div>
+        <div>
+          <p class="section-kicker">The smaller question</p>
+          <h2>Can I sleep tonight?</h2>
+          <p>That question deserved a calm two-second answer, not digging through 14 Moodle tabs before midnight.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section class="get section-shell reveal" id="install">
+      <div class="get-copy">
+        <p class="section-kicker">Get NeverLate</p>
+        <h2>15 seconds to install.<br>Then look up.</h2>
+        <p>Requires Google Chrome, Brave, Arc, or Edge. Once loaded, open Plaksha LMS once to sign in. The extension automatically syncs and starts tracking.</p>
+      </div>
+      <div class="install-panel">
+        <div class="terminal-top"><span></span><span></span><span></span><small>Terminal / Setup</small></div>
+        <div class="terminal-body">
+          <div class="terminal-steps">
+            <div class="step-line"><span class="step-num">1</span> Download <a href="NeverLate-Plaksha.zip" download class="term-link">NeverLate-Plaksha.zip</a> and unzip it.</div>
+            <div class="step-line"><span class="step-num">2</span> Open Chrome and visit <code>chrome://extensions</code> in the address bar.</div>
+            <div class="step-line"><span class="step-num">3</span> Turn on the <strong>Developer mode</strong> switch in the top-right corner.</div>
+            <div class="step-line"><span class="step-num">4</span> Click <strong>Load unpacked</strong> and select the unzipped folder.</div>
+            <div class="step-line"><span class="step-num">5</span> Open <a href="https://lms.plaksha.edu.in" target="_blank" rel="noreferrer" class="term-link">lms.plaksha.edu.in</a>. You're done!</div>
+          </div>
+          <div class="terminal-divider"></div>
+          <button class="terminal-command" type="button" data-copy="git clone https://github.com/yourarnav/NeverLate-Plaksha.git">
+            <span>$</span><code>git clone https://github.com/yourarnav/NeverLate-Plaksha.git</code><b>Copy</b>
+          </button>
+          <p class="terminal-note">Prefer git? Clone the repo, load the folder unpacked, and pull anytime for updates.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer section-shell">
+    <a class="brand footer-brand" href="#top">
+      <span class="brand-mark" aria-hidden="true">
+        <span class="brand-ring brand-ring-red"></span>
+        <span class="brand-ring brand-ring-purple"></span>
+      </span>
+      <span>NeverLate</span>
+    </a>
+    <p>Unofficial. Built with ❤️ for Plaksha University students. Not affiliated with Moodle Pty Ltd.</p>
+    <div class="footer-links">
+      <a href="https://github.com/yourarnav/NeverLate-Plaksha" target="_blank" rel="noreferrer">Source ↗</a>
+      <a href="https://github.com/yourarnav/NeverLate-Plaksha/releases" target="_blank" rel="noreferrer">Releases ↗</a>
+      <a href="https://github.com/yourarnav/NeverLate-Plaksha/blob/main/LICENSE" target="_blank" rel="noreferrer">License ↗</a>
+    </div>
+  </footer>
+
+  <div class="toast" role="status" aria-live="polite">Copied to clipboard</div>
+  <script src="script.js"></script>
+</body>
+</html>

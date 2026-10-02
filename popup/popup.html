@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeverLate — Deadline Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-window">
+    <!-- Top Navigation Bar -->
+    <header class="nav-bar">
+      <div class="nav-left">
+        <div class="app-icon" aria-hidden="true"></div>
+        <div class="app-meta">
+          <h1 class="app-title">NeverLate</h1>
+          <span class="user-subtitle" id="user-display">Checking session...</span>
+        </div>
+      </div>
+      <div class="nav-right">
+        <!-- Appearance (System / Light / Dark) -->
+        <button id="theme-btn" class="icon-accessory-btn" title="Appearance: System">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <!-- Fixed Plaksha LMS indicator (no university switching in this build) -->
+        <span class="icon-accessory-btn" title="Connected to Plaksha LMS" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 21h18"/>
+            <path d="M5 21V7l7-4 7 4v14"/>
+            <path d="M9 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v11H9z"/>
+          </svg>
+        </span>
+        <!-- Prominent Sync Button -->
+        <button id="sync-btn" class="sync-action-btn" title="Refresh courses and deadlines">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="sync-icon">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span id="sync-btn-label">Sync</span>
+        </button>
+        <!-- Authoritative Moodle Link -->
+        <a id="moodle-portal-link" href="#" target="_blank" rel="noopener noreferrer" class="icon-accessory-btn" title="Open University Moodle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- Plaksha-only build: fixed portal, no university switching. -->
+
+    <!-- Add Manual Deadline Modal Sheet -->
+    <div id="add-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="add-modal-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-row">
+            <span class="modal-title" id="add-modal-title">Add Deadline</span>
+            <button id="close-add-modal-btn" class="modal-close-btn" title="Close">&times;</button>
+          </div>
+          <p class="modal-subtitle">Manual entries live in this university's list with the same countdowns and reminders.</p>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="add-type-select" class="form-label">Type</label>
+              <select id="add-type-select" class="custom-select">
+                <option value="assignment">Assignment</option>
+                <option value="quiz">Quiz</option>
+                <option value="exam">Exam</option>
+                <option value="personal">Personal</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="add-subtype-group">
+              <label for="add-subtype-select" class="form-label">Exam kind</label>
+              <select id="add-subtype-select" class="custom-select">
+                <option value="midsem">Mid-Sem</option>
+                <option value="endsem">End-Sem</option>
+                <option value="test">Class Test</option>
+                <option value="viva">Viva</option>
+                <option value="practical">Practical</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="add-title-input" class="form-label">Title</label>
+            <input type="text" id="add-title-input" class="text-input" placeholder="e.g. Problem Set 5, Essay Draft" autocomplete="off" spellcheck="false" maxlength="200">
+          </div>
+
+          <div class="form-group">
+            <label for="add-course-input" class="form-label">Course (optional)</label>
+            <input type="text" id="add-course-input" class="text-input" placeholder="e.g. CS201" autocomplete="off" spellcheck="false" maxlength="100" list="add-course-datalist">
+            <datalist id="add-course-datalist"></datalist>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="add-date-input" class="form-label">Date</label>
+              <input type="date" id="add-date-input" class="text-input">
+            </div>
+            <div class="form-group">
+              <label for="add-time-input" class="form-label">Time</label>
+              <input type="time" id="add-time-input" class="text-input" value="23:59">
+            </div>
+          </div>
+
+          <div class="form-group hidden" id="add-location-group">
+            <label for="add-location-input" class="form-label">Location (optional)</label>
+            <input type="text" id="add-location-input" class="text-input" placeholder="e.g. A203 or Online" autocomplete="off" spellcheck="false" maxlength="100" list="add-location-datalist">
+            <datalist id="add-location-datalist">
+              <option value="Online"></option>
+            </datalist>
+          </div>
+
+          <span id="add-status-msg" class="form-help-text"></span>
+
+          <button id="save-add-btn" class="primary-action-btn" style="border:none; cursor:pointer; width:100%;">Add to Upcoming</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Segmented Tab Control -->
+    <div class="control-strip">
+      <div class="segmented-control" role="tablist">
+        <button class="segment active" data-tab="deadlines-tab" role="tab">
+          <span>Deadlines</span>
+          <span class="segment-badge" id="deadlines-badge">0</span>
+        </button>
+        <button class="segment" data-tab="courses-tab" role="tab">
+          <span>My Courses</span>
+          <span class="segment-badge" id="courses-badge">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Container -->
+    <main class="viewport">
+      <!-- Tab 1: Deadlines -->
+      <section id="deadlines-tab" class="view-pane active">
+        <!-- Opt-in Deadline Alerts Card -->
+        <div class="alerts-card" id="alerts-card">
+          <div class="alerts-card-left">
+            <div class="alerts-icon-wrap">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+            </div>
+            <div class="alerts-meta">
+              <span class="alerts-title">Deadline Alerts</span>
+              <span class="alerts-status" id="alerts-status">Off</span>
+            </div>
+          </div>
+          <label class="toggle-switch" title="Opt-in to 8 AM daily digest and 2-hour urgent alerts">
+            <input type="checkbox" id="alerts-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="extras-row hidden" id="extras-row">
+          <span class="extras-label">Also remind me</span>
+          <label class="extras-opt"><input type="checkbox" id="extra-6h"> 6h before</label>
+          <label class="extras-opt"><input type="checkbox" id="extra-30m"> 30m before</label>
+        </div>
+
+        <div class="filter-strip-row">
+          <div class="filter-wrapper">
+            <select id="course-filter" class="custom-select" title="Filter by Course">
+              <option value="all">All Enrolled Courses</option>
+            </select>
+          </div>
+          <div class="export-dropdown-wrapper" id="export-dropdown-wrapper">
+            <button id="export-menu-btn" class="export-calendar-btn" type="button" title="Export deadlines to Calendar">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <span>Export</span>
+              <svg class="chevron-arrow" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+            <div id="export-popover" class="export-popover-menu hidden">
+              <button class="popover-option" id="export-all-ics-btn" type="button">
+                <span class="option-badge apple-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </span>
+                <div class="option-text">
+                  <span class="option-title">Apple Calendar (.ics)</span>
+                  <span class="option-subtitle">All active deadlines with 2h alerts</span>
+                </div>
+              </button>
+              <button class="popover-option" id="export-next-gcal-btn" type="button">
+                <span class="option-badge google-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7z"/>
+                  </svg>
+                </span>
+                <div class="option-text">
+                  <span class="option-title">Google Calendar</span>
+                  <span class="option-subtitle">Add next deadline in 1 click</span>
+                </div>
+              </button>
+              <button class="popover-option" id="export-next-outlook-btn" type="button">
+                <span class="option-badge outlook-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                    <line x1="10" y1="4" x2="10" y2="22"/>
+                  </svg>
+                </span>
+                <div class="option-text">
+                  <span class="option-title">Outlook 365</span>
+                  <span class="option-subtitle">Add next deadline to Office 365</span>
+                </div>
+              </button>
+              <label class="popover-privacy-row" title="Choose whether calendar events include the Moodle assignment link">
+                <input type="checkbox" id="include-url-toggle" checked>
+                <span>Include Moodle link in calendar events</span>
+              </label>
+            </div>
+          </div>
+          <button id="add-deadline-btn" class="add-deadline-btn" type="button" title="Add a manual deadline (assignment, quiz, exam, personal)">
+            <span class="add-plus">+</span><span>Add</span>
+          </button>
+        </div>
+
+        <div id="deadlines-list" class="grouped-list"></div>
+
+        <!-- Collapsible Completed Deliverables Section -->
+        <div id="completed-section" class="completed-section hidden">
+          <button id="toggle-completed-btn" class="completed-header-btn" type="button">
+            <span class="disclosure-arrow" id="completed-arrow">&#9656;</span>
+            <span id="completed-count-label">Completed (0)</span>
+          </button>
+          <div id="completed-list" class="grouped-list hidden"></div>
+        </div>
+
+        <div id="deadlines-empty" class="empty-container hidden">
+          <div class="empty-symbol">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#D70015" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <h2 class="empty-title">No Upcoming Deadlines</h2>
+          <p class="empty-description">All coursework and deliverables are currently complete.</p>
+        </div>
+
+        <div id="ready-sync-state" class="empty-container hidden">
+          <div class="empty-symbol">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#D70015" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+          </div>
+          <h2 class="empty-title">Ready to Sync</h2>
+          <p class="empty-description" id="ready-sync-desc">Click "Sync" to load your enrolled courses and upcoming deadlines.</p>
+          <button id="initial-sync-trigger" class="primary-action-btn" style="border:none; cursor:pointer;">Sync</button>
+        </div>
+
+        <div id="logged-out-state" class="empty-container hidden">
+          <div class="empty-symbol">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#D70015" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h2 class="empty-title">Authentication Required</h2>
+          <p class="empty-description" id="logged-out-desc">Sign in to your university Moodle to automatically load your enrolled courses and deadlines.</p>
+          <a id="login-portal-link" href="#" target="_blank" rel="noopener noreferrer" class="primary-action-btn">Sign in to Moodle</a>
+        </div>
+      </section>
+
+      <!-- Tab 2: Enrolled Courses -->
+      <section id="courses-tab" class="view-pane">
+        <div id="courses-list" class="grouped-list"></div>
+
+        <div id="courses-empty" class="empty-container hidden">
+          <div class="empty-symbol">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+          </div>
+          <h2 class="empty-title">No Enrolled Courses Detected</h2>
+          <p class="empty-description" id="courses-empty-desc">Sign in to your university Moodle and click Sync to detect courses.</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <div class="status-indicator">
+        <span class="dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Connected</span>
+      </div>
+      <div class="status-time" id="last-synced-time">--:--</div>
+    </footer>
+    <div class="credit-footer" id="credit-line"></div>
+  </div>
+
+  <script src="../scripts/moodle-api.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
