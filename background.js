@@ -943,8 +943,11 @@ processDueAlerts();
 
 // Seamless pickup: shortly after any Plaksha LMS page finishes loading,
 // run a throttled background sync (no clicks needed once installed).
+// Async + awaited: returning the promise keeps the service worker alive
+// until the sync finishes, otherwise Chrome can kill it mid-fetch and the
+// auto-sync silently never lands.
 if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.onUpdated) {
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     try {
       if (!changeInfo || changeInfo.status !== "complete") return;
       const url = tab && tab.url;
@@ -957,7 +960,8 @@ if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.onUpdated) {
       }
       if (host !== "lms.plaksha.edu.in" && host !== "dle.plaksha.edu.in") return;
       if (url.includes("/login/")) return;
-      safeSync(false, false).catch(() => {});
+      console.log("[Background] Plaksha page loaded, running auto-sync");
+      await safeSync(false, false);
     } catch (_) {}
   });
 }
@@ -1000,6 +1004,12 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       } catch (_) {}
     }
     await processDueAlerts();
+    // Fresh drag while already signed in should just work: run one
+    // throttled sync immediately instead of waiting for the next page load.
+    // Awaited so the worker stays alive until it finishes.
+    try {
+      await safeSync(false, false);
+    } catch (_) {}
   } catch (err) {
     console.error("[Background] onInstalled error:", err);
   }
