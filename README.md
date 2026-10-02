@@ -1,4 +1,4 @@
-# NeverLate — Plaksha Deadline Tracker (Plaksha-only build)
+# NeverLate — Plaksha Deadline Tracker 
 
 Fixed single-site variant of NeverLate for **Plaksha LMS only**:
 canonical site is `https://lms.plaksha.edu.in`
