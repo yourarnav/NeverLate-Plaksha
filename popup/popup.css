@@ -1640,3 +1640,25 @@ body {
     background: #3a3a3c;
   }
 }
+
+/* Transient notice */
+.nl-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translate(-50%, 8px);
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(28, 28, 30, 0.92);
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 1000;
+}
+.nl-toast.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

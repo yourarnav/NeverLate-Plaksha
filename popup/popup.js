@@ -1,7 +1,7 @@
 /**
  * NeverLate Plaksha-Only — Popup Controller
  * Fixed single-site (Plaksha LMS) controller
- * Cache-first rendering, dynamic university portal switching,
+ * Cache-first rendering,
  * calm semantic countdown timers, and zero auto-sync storms.
  */
 
@@ -58,17 +58,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const segments = document.querySelectorAll(".segment");
   const viewPanes = document.querySelectorAll(".view-pane");
 
-  // University Settings Modal Elements
-  const univSettingsBtn = document.getElementById("univ-settings-btn");
-  const univModal = document.getElementById("univ-modal");
-  const closeUnivModalBtn = document.getElementById("close-univ-modal-btn");
-  const currentUnivName = document.getElementById("current-univ-name");
-  const currentUnivUrl = document.getElementById("current-univ-url");
-  const portalUrlInput = document.getElementById("portal-url-input");
-  const savePortalBtn = document.getElementById("save-portal-btn");
-  const portalStatusMsg = document.getElementById("portal-status-msg");
-  const detectActiveTabBtn = document.getElementById("detect-active-tab-btn");
-  const presetBtns = document.querySelectorAll(".preset-pill-btn:not(.auto-tab)");
   const themeBtn = document.getElementById("theme-btn");
   const includeUrlToggle = document.getElementById("include-url-toggle");
 
@@ -397,7 +386,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     } catch (_) {}
     if (site) {
-      await MoodleAPI.saveSiteData(site, { completedDeadlines: completedDeadlines });
+      const nowDone = Boolean(completedDeadlines[key]);
+      const doneAt = completedDeadlines[key];
+      const legacyId = (deadlineOrId && typeof deadlineOrId === "object" && deadlineOrId.id !== undefined)
+        ? String(deadlineOrId.id)
+        : null;
+      // Apply just this one change to the latest stored map (atomic).
+      await MoodleAPI.updateSiteData(site, (prev) => {
+        const map = { ...(prev.completedDeadlines || {}) };
+        if (nowDone) map[key] = doneAt;
+        else delete map[key];
+        if (legacyId) delete map[legacyId];
+        return { completedDeadlines: map };
+      });
     } else {
       try {
         await chrome.storage.local.set({ completedDeadlines: completedDeadlines });
@@ -407,6 +408,24 @@ document.addEventListener("DOMContentLoaded", async () => {
       chrome.runtime.sendMessage({ action: "TOGGLE_DEADLINE_DONE" });
     } catch (_) {}
     renderDeadlines();
+  }
+
+  // Non-blocking, screen-reader-friendly notice (replaces window.alert).
+  let toastTimer = null;
+  function showToast(message) {
+    let el = document.getElementById("nl-toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "nl-toast";
+      el.className = "nl-toast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.add("visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("visible"), 3000);
   }
 
   // Calendar URL formatting & dispatch helpers.
@@ -668,21 +687,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       key = MoodleAPI.buildStableKey(site, item);
     } catch (_) {}
-    currentData.deadlines = currentData.deadlines.filter((d) => {
-      if (!d || !MoodleAPI.isManualItem(d)) return true;
+    const isTarget = (d) => {
+      if (!d || !MoodleAPI.isManualItem(d)) return false;
       try {
-        return MoodleAPI.buildStableKey(site, d) !== key;
+        return MoodleAPI.buildStableKey(site, d) === key;
       } catch (_) {
-        return d !== item;
+        return d === item;
       }
-    });
-    // Drop its Done mark too so keys never accumulate.
+    };
+    const legacyId = (item && item.id !== undefined && item.id !== null) ? String(item.id) : null;
+
     try {
-      if (key && completedDeadlines[key]) delete completedDeadlines[key];
-      if (item && item.id !== undefined && completedDeadlines[String(item.id)]) delete completedDeadlines[String(item.id)];
-    } catch (_) {}
-    try {
-      await MoodleAPI.saveSiteData(site, { moodleData: currentData, completedDeadlines });
+      const saved = await MoodleAPI.updateSiteData(site, (prev) => {
+        const md = prev.moodleData;
+        const completed = { ...(prev.completedDeadlines || {}) };
+        // Drop its Done mark too so keys never accumulate.
+        if (key) delete completed[key];
+        if (legacyId) delete completed[legacyId];
+        const partial = { completedDeadlines: completed };
+        if (md && Array.isArray(md.deadlines)) {
+          partial.moodleData = { ...md, deadlines: md.deadlines.filter((d) => !isTarget(d)) };
+        }
+        return partial;
+      });
+      if (saved) {
+        if (saved.moodleData) currentData = saved.moodleData;
+        completedDeadlines = saved.completedDeadlines || {};
+      } else {
+        currentData.deadlines = currentData.deadlines.filter((d) => !isTarget(d));
+      }
       chrome.runtime.sendMessage({ action: "REFRESH_SITE_ALERTS" });
     } catch (_) {}
     renderDeadlines();
@@ -975,7 +1008,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           const fName = (c.fullname || "").toLowerCase();
           const dShort = (d.courseShortName || "").toLowerCase();
           const dFull = (d.courseName || "").toLowerCase();
-          const dText = `${d.name || ""} ${d.activityname || ""} ${dShort} ${dFull} ${d.url || ""}`.toLowerCase();
+          const dText = `${d.name || ""} ${d.activityname || ""} ${dShort} ${dFull}`.toLowerCase();
 
           if (
             (dShort && sName && (dShort === sName || sName.includes(dShort) || dShort.includes(sName))) ||
@@ -987,14 +1020,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             break;
           }
 
-          const codeMatch = sName.match(/([a-z]{2,5})\s*[-_]?\s*(\d{3,5})/i);
-          if (codeMatch) {
-            const prefix = codeMatch[1].toLowerCase();
-            const num = codeMatch[2];
-            if (dText.includes(prefix + num) || dText.includes(num)) {
-              matched = c;
-              break;
-            }
+          if (MoodleAPI.courseCodeMatchesText(sName, dText)) {
+            matched = c;
+            break;
           }
         }
       }
@@ -1022,7 +1050,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         const site = currentSiteKey || currentBaseUrl;
         if (site && MoodleAPI.saveSiteData) {
-          MoodleAPI.saveSiteData(site, { moodleData: data }).catch(() => {});
+          // Persist only if storage still holds the snapshot we repaired; a
+          // newer sync/manual edit wins and is repaired again on next load.
+          const snapshotSync = data.lastSynced;
+          const snapshotLen = data.deadlines.length;
+          MoodleAPI.updateSiteData(site, (prev) => {
+            const md = prev.moodleData;
+            if (!md || md.lastSynced !== snapshotSync || !Array.isArray(md.deadlines) || md.deadlines.length !== snapshotLen) return null;
+            return { moodleData: data };
+          }).catch(() => {});
         } else {
           chrome.storage.local.set({ moodleData: data });
         }
@@ -1321,7 +1357,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isSyncing) return;
     if (!currentBaseUrl) {
       showUnconfiguredState();
-      openUnivModal();
       return;
     }
 
@@ -1425,7 +1460,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   }
 
-  // University Switcher Modal Logic
   // Focus return: remember what opened a modal and hand focus back on close
   // so keyboard users never lose their place.
   let modalOpener = null;
@@ -1447,14 +1481,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function isAnyModalOpen() {
-    return !!((univModal && !univModal.classList.contains("hidden")) ||
-              (addModal && !addModal.classList.contains("hidden")));
+    return !!(addModal && !addModal.classList.contains("hidden"));
   }
 
   // Light Tab trap: keep keyboard focus cycling inside the open modal.
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Tab") return;
-    const openModal = [univModal, addModal].find((m) => m && !m.classList.contains("hidden"));
+    const openModal = (addModal && !addModal.classList.contains("hidden")) ? addModal : null;
     if (!openModal) return;
     let focusables = [];
     try {
@@ -1472,240 +1505,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       first.focus();
     }
   }, true);
-
-  function openUnivModal() {
-    rememberModalOpener();
-    if (currentUnivName) currentUnivName.textContent = currentBaseUrl ? currentInstitutionName : "Not connected";
-    if (currentUnivUrl) currentUnivUrl.textContent = currentBaseUrl || "No portal connected";
-    if (portalUrlInput) {
-      portalUrlInput.value = currentBaseUrl || "";
-      portalUrlInput.focus();
-    }
-    if (portalStatusMsg) {
-      portalStatusMsg.textContent = "Compatible with modern Moodle installations (HTTPS only)";
-      portalStatusMsg.className = "form-help-text";
-    }
-    if (univModal) univModal.classList.remove("hidden");
-  }
-
-  function closeUnivModal() {
-    if (univModal) univModal.classList.add("hidden");
-    returnModalFocus();
-  }
-
-  async function handleSwitchUniversity(rawUrl, customName = null) {
-    if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
-      if (portalStatusMsg) {
-        portalStatusMsg.textContent = "This doesn't look like a valid Moodle URL. Please enter your university portal address (e.g. moodle.university.edu).";
-        portalStatusMsg.className = "form-help-text error";
-      }
-      return;
-    }
-
-    let normalized;
-    try {
-      normalized = MoodleAPI.normalizeBaseUrl(rawUrl);
-    } catch (err) {
-      if (portalStatusMsg) {
-        portalStatusMsg.textContent = err.message || "This doesn't look like a valid Moodle URL.";
-        portalStatusMsg.className = "form-help-text error";
-      }
-      return;
-    }
-
-    const targetOrigin = MoodleAPI.originForPermission(normalized);
-    if (!targetOrigin) {
-      if (portalStatusMsg) {
-        portalStatusMsg.textContent = "This doesn't look like a valid Moodle URL.";
-        portalStatusMsg.className = "form-help-text error";
-      }
-      return;
-    }
-
-    if (portalStatusMsg) {
-      portalStatusMsg.textContent = "Connecting to university portal...";
-      portalStatusMsg.className = "form-help-text";
-    }
-
-    try {
-      // Every university (including Plaksha) goes through the same runtime permission flow.
-      let hasHostPermission = false;
-      if (typeof chrome !== "undefined" && chrome.permissions) {
-        try {
-          hasHostPermission = await chrome.permissions.contains({ origins: [`${targetOrigin}/*`] });
-        } catch (_) {
-          hasHostPermission = false;
-        }
-      }
-
-      // If not granted yet, request runtime permission for this specific university origin.
-      // ActiveTab gives temporary URL visibility; this grants persistent portal access.
-      if (!hasHostPermission && typeof chrome !== "undefined" && chrome.permissions) {
-        const granted = await chrome.permissions.request({ origins: [`${targetOrigin}/*`] });
-        if (!granted) {
-          if (portalStatusMsg) {
-            portalStatusMsg.textContent = "Permission needed to connect to this portal";
-            portalStatusMsg.className = "form-help-text error";
-          }
-          return;
-        }
-      }
-
-      // Save base URL and institution name (per-site bucket preserved on return visits).
-      // setBaseUrl canonicalizes aliases (dle.plaksha -> lms.plaksha); use the
-      // returned key so the popup never points at a stale redirect origin.
-      const canonical = await MoodleAPI.setBaseUrl(normalized, customName);
-      currentBaseUrl = canonical || normalized;
-      currentSiteKey = canonical || normalized;
-      if (customName) {
-        currentInstitutionName = customName;
-      } else {
-        currentInstitutionName = MoodleAPI.extractInstitutionName("", currentBaseUrl) || "Plaksha University";
-      }
-
-      // Load this site's isolated cache immediately so no other site's data bleeds through.
-      try {
-        const siteData = await MoodleAPI.getSiteData(currentSiteKey);
-        completedDeadlines = (siteData.completedDeadlines && typeof siteData.completedDeadlines === "object")
-          ? siteData.completedDeadlines
-          : {};
-        if (siteData.moodleData) {
-          currentData = siteData.moodleData;
-          if (siteData.institutionName) currentInstitutionName = siteData.institutionName;
-          else if (siteData.moodleData.institutionName) currentInstitutionName = siteData.moodleData.institutionName;
-        } else {
-          currentData = null;
-        }
-      } catch (_) {}
-
-      // Register dynamic content script for this installation (origin + subpath aware).
-      try {
-        chrome.runtime.sendMessage({
-          action: "REGISTER_UNIVERSITY_DOMAIN",
-          baseUrl: currentBaseUrl,
-          origin: MoodleAPI.originForPermission(currentBaseUrl) || targetOrigin
-        });
-      } catch (_) {}
-
-      // Close modal and show success
-      closeUnivModal();
-
-      // Immediately apply the new site's cached state (badge + alerts + alarm),
-      // even when the follow-up network sync is rate-limited or offline.
-      try {
-        if (currentData) {
-          updateUI(currentData);
-        } else {
-          renderDeadlines();
-          renderCourses();
-        }
-      } catch (_) {}
-      try {
-        chrome.runtime.sendMessage({ action: "REFRESH_SITE_ALERTS" });
-      } catch (_) {}
-
-      // Reset displayed state to loading and trigger fresh sync (non-forced; cooldowns apply).
-      userDisplay.textContent = `Connecting to ${currentInstitutionName}...`;
-      statusText.textContent = "Connecting...";
-      statusDot.className = "dot warning";
-
-      requestSync(true, false);
-    } catch (err) {
-      console.warn("[Popup] Failed to switch university:", err);
-      if (portalStatusMsg) {
-        portalStatusMsg.textContent = err.message || "Failed to connect";
-        portalStatusMsg.className = "form-help-text error";
-      }
-    }
-  }
-
-  // Event Listeners for University Modal
-  if (univSettingsBtn) {
-    univSettingsBtn.addEventListener("click", openUnivModal);
-  }
-
-  if (closeUnivModalBtn) {
-    closeUnivModalBtn.addEventListener("click", closeUnivModal);
-  }
-
-  if (univModal) {
-    univModal.addEventListener("click", (e) => {
-      if (e.target === univModal) closeUnivModal();
-    });
-  }
-
-  if (savePortalBtn && portalUrlInput) {
-    savePortalBtn.addEventListener("click", () => {
-      handleSwitchUniversity(portalUrlInput.value);
-    });
-
-    portalUrlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleSwitchUniversity(portalUrlInput.value);
-      }
-    });
-  }
-
-  presetBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const url = btn.getAttribute("data-url");
-      const name = btn.getAttribute("data-name");
-      if (portalUrlInput) portalUrlInput.value = url;
-      handleSwitchUniversity(url, name);
-    });
-  });
-
-  if (detectActiveTabBtn) {
-    detectActiveTabBtn.addEventListener("click", async () => {
-      try {
-        if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.query) {
-          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-          // activeTab grants temporary URL visibility for onboarding; without it
-          // tab.url may be undefined when connecting a brand-new university.
-          if (tab && tab.url && tab.url.startsWith("https://")) {
-            let detectedBase;
-            try {
-              // Preserves Moodle installation subpath (e.g. /moodle), not just origin.
-              detectedBase = MoodleAPI.normalizeBaseUrl(tab.url);
-            } catch (err) {
-              if (portalStatusMsg) {
-                portalStatusMsg.textContent = err.message || "Could not detect a valid Moodle URL from the current tab.";
-                portalStatusMsg.className = "form-help-text error";
-              }
-              return;
-            }
-            if (portalUrlInput) portalUrlInput.value = detectedBase;
-            if (portalStatusMsg) {
-              try {
-                const host = new URL(detectedBase).hostname;
-                portalStatusMsg.textContent = `Detected ${host}${new URL(detectedBase).pathname || ""}. Click Connect.`;
-              } catch (_) {
-                portalStatusMsg.textContent = `Detected ${detectedBase}. Click Connect.`;
-              }
-              portalStatusMsg.className = "form-help-text success";
-            }
-          } else if (tab && tab.url && tab.url.startsWith("http://")) {
-            if (portalStatusMsg) {
-              portalStatusMsg.textContent = "Moodle connections require HTTPS. Please open the https:// portal URL.";
-              portalStatusMsg.className = "form-help-text error";
-            }
-          } else {
-            if (portalStatusMsg) {
-              portalStatusMsg.textContent = "Current tab URL is not available. Open your Moodle portal in this tab, then try again.";
-              portalStatusMsg.className = "form-help-text error";
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Popup] Tab detection error:", e);
-        if (portalStatusMsg) {
-          portalStatusMsg.textContent = "Could not read the current tab. Enter your portal URL manually.";
-          portalStatusMsg.className = "form-help-text error";
-        }
-      }
-    });
-  }
 
   // Manual Academic Deadlines (+ Add): stored in the ACTIVE site's bucket,
   // rendered inline in the same Upcoming timeline with identical countdowns,
@@ -1775,7 +1574,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   function openAddModal(existingItem = null) {
     if (!currentBaseUrl) {
       showUnconfiguredState();
-      openUnivModal();
       return;
     }
     rememberModalOpener();
@@ -1877,55 +1675,58 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     try {
-      if (!currentData || typeof currentData !== "object" || !Array.isArray(currentData.deadlines)) {
-        currentData = {
-          user: { isLoggedIn: false, name: null },
-          institutionName: currentInstitutionName,
-          moodleBaseUrl: site,
-          courses: (currentData && Array.isArray(currentData.courses)) ? currentData.courses : [],
-          deadlines: [],
-          lastSynced: 0
-        };
-      }
-      if (editingManualKey) {
-        // Edit mode: replace the original entry in place, keeping its manual
-        // id for continuity. The rebuilt key inherits the Done mark so editing
-        // never silently un-completes work; a changed timestamp still yields
-        // fresh reminder keys downstream.
-        const original = currentData.deadlines.find((d) => {
-          if (!d || !MoodleAPI.isManualItem(d)) return false;
-          try {
-            return MoodleAPI.buildStableKey(site, d) === editingManualKey;
-          } catch (_) {
-            return false;
-          }
-        });
-        if (original && original.id) {
-          item.id = original.id;
-          try {
-            item.stableKey = MoodleAPI.buildStableKey(site, item);
-          } catch (_) {}
+      const baseData = {
+        user: { isLoggedIn: false, name: null },
+        institutionName: currentInstitutionName,
+        moodleBaseUrl: site,
+        courses: (currentData && Array.isArray(currentData.courses)) ? currentData.courses : [],
+        deadlines: [],
+        lastSynced: 0
+      };
+      const keyOf = (d) => {
+        try {
+          return MoodleAPI.buildStableKey(site, d);
+        } catch (_) {
+          return null;
         }
-        let replaced = false;
-        currentData.deadlines = currentData.deadlines.map((d) => {
-          if (!d || !MoodleAPI.isManualItem(d)) return d;
-          let dKey = null;
-          try {
-            dKey = MoodleAPI.buildStableKey(site, d);
-          } catch (_) {}
-          if (dKey !== editingManualKey) return d;
-          replaced = true;
-          try {
-            completedDeadlines = MoodleAPI.moveCompletion(completedDeadlines, editingManualKey, item.stableKey);
-          } catch (_) {}
-          return item;
-        });
-        if (!replaced) currentData.deadlines.push(item);
-      } else {
-        currentData.deadlines.push(item);
-      }
-      currentData.deadlines.sort((a, b) => a.timesort - b.timesort);
-      await MoodleAPI.saveSiteData(site, { moodleData: currentData, completedDeadlines });
+      };
+
+      // Apply the change to the LATEST stored list (atomically) so a sync that
+      // finished while the modal was open is never overwritten by a stale copy.
+      const saved = await MoodleAPI.updateSiteData(site, (prev) => {
+        const md = (prev.moodleData && typeof prev.moodleData === "object") ? { ...prev.moodleData } : baseData;
+        let deadlines = Array.isArray(md.deadlines) ? [...md.deadlines] : [];
+        let completed = (prev.completedDeadlines && typeof prev.completedDeadlines === "object") ? prev.completedDeadlines : {};
+        const newItem = { ...item };
+
+        if (editingManualKey) {
+          // Edit mode: replace the original entry in place, keeping its manual
+          // id for continuity. The rebuilt key inherits the Done mark so editing
+          // never silently un-completes work; a changed timestamp still yields
+          // fresh reminder keys downstream.
+          const original = deadlines.find((d) => d && MoodleAPI.isManualItem(d) && keyOf(d) === editingManualKey);
+          if (original && original.id) {
+            newItem.id = original.id;
+            const rebuilt = keyOf(newItem);
+            if (rebuilt) newItem.stableKey = rebuilt;
+          }
+          let replaced = false;
+          deadlines = deadlines.map((d) => {
+            if (!d || !MoodleAPI.isManualItem(d) || keyOf(d) !== editingManualKey) return d;
+            replaced = true;
+            completed = MoodleAPI.moveCompletion(completed, editingManualKey, newItem.stableKey);
+            return newItem;
+          });
+          if (!replaced) deadlines.push(newItem);
+        } else {
+          deadlines.push(newItem);
+        }
+        deadlines.sort((a, b) => a.timesort - b.timesort);
+        return { moodleData: { ...md, deadlines }, completedDeadlines: completed };
+      });
+      if (!saved) throw new Error("Storage write failed");
+      currentData = saved.moodleData;
+      completedDeadlines = (saved.completedDeadlines && typeof saved.completedDeadlines === "object") ? saved.completedDeadlines : completedDeadlines;
       chrome.runtime.sendMessage({ action: "REFRESH_SITE_ALERTS" });
     } catch (err) {
       if (addStatusMsg) {
@@ -2051,7 +1852,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   function exportToCalendarICS(deadlines, institutionName = "Plaksha University") {
     const active = getActiveDeadlinesForExport(deadlines);
     if (active.length === 0) {
-      alert("No active deadlines available to export.");
+      showToast("No active deadlines available to export.");
       return;
     }
 
@@ -2088,9 +1889,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         "BEGIN:VEVENT",
         `UID:${icsUidFor(item)}`,
         `DTSTAMP:${nowStr}`,
-        // Deadline point: DTSTART only (no DTEND — the event is due at this
-        // moment, not a block ending/starting here).
-        `DTSTART:${dueStr}`,
+        // Same 30-minute block ending at the deadline as the Google/Outlook links.
+        `DTSTART:${formatICSDate(new Date((item.timesort - 1800) * 1000))}`,
+        `DTEND:${dueStr}`,
         `SUMMARY:${escapeICS(summary)}`,
         `DESCRIPTION:${escapeICS(desc)}`,
         ...((item.location && String(item.location).trim()) ? [`LOCATION:${escapeICS(String(item.location).trim().substring(0, 100))}`] : []),
@@ -2098,7 +1899,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         "BEGIN:VALARM",
         "ACTION:DISPLAY",
         "DESCRIPTION:Reminder: 2 hours remaining",
-        "TRIGGER:-PT2H",
+        "TRIGGER:-PT90M",
         "END:VALARM",
         "END:VEVENT"
       ];
@@ -2198,7 +1999,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const url = getGoogleCalendarUrl(next);
         if (url) openCalendarUrl(url);
       } else {
-        alert("No upcoming deadlines to add.");
+        showToast("No upcoming deadlines to add.");
       }
     });
   }
@@ -2211,7 +2012,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const url = getOutlookCalendarUrl(next);
         if (url) openCalendarUrl(url);
       } else {
-        alert("No upcoming deadlines to add.");
+        showToast("No upcoming deadlines to add.");
       }
     });
   }
@@ -2230,7 +2031,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (e.key === "Escape") {
         const hadModal = isAnyModalOpen();
         closeExportPopover();
-        closeUnivModal();
         closeAddModal();
         // Modal closes already return focus to their opener; only blur when
         // nothing was open.
@@ -2241,7 +2041,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (e.key === "Escape") {
       closeExportPopover();
-      closeUnivModal();
       closeAddModal();
     } else if (e.key === "1") {
       const seg = document.querySelector('.segment[data-tab="deadlines-tab"]');
@@ -2273,13 +2072,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Main UI Action Listeners (manual sync is NEVER forced; background enforces cooldowns)
   syncBtn.addEventListener("click", () => requestSync(true, false));
   if (initialSyncTrigger) {
-    initialSyncTrigger.addEventListener("click", () => {
-      if (!currentBaseUrl) {
-        openUnivModal();
-        return;
-      }
-      requestSync(true, false);
-    });
+    initialSyncTrigger.addEventListener("click", () => requestSync(true, false));
   }
 
   courseFilter.addEventListener("change", (e) => {

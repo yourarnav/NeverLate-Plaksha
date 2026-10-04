@@ -40,6 +40,7 @@ function __emptySiteData() {
 }
 
 class MoodleAPI {
+  static _writeChain = Promise.resolve();
   static _cachedBaseUrl = null;
   static _hasLoadedBaseUrl = false;
 
@@ -50,11 +51,11 @@ class MoodleAPI {
    */
   static normalizeBaseUrl(rawInput) {
     if (!rawInput || typeof rawInput !== "string") {
-      throw new Error("This doesn't look like a valid Moodle URL. Please enter your university portal address (e.g. moodle.university.edu).");
+      throw new Error("This doesn't look like a valid Plaksha LMS address.");
     }
     let trimmed = rawInput.trim();
     if (!trimmed) {
-      throw new Error("This doesn't look like a valid Moodle URL. Please enter your university portal address (e.g. moodle.university.edu).");
+      throw new Error("This doesn't look like a valid Plaksha LMS address.");
     }
     if (!/^https?:\/\//i.test(trimmed)) {
       trimmed = "https://" + trimmed;
@@ -63,10 +64,10 @@ class MoodleAPI {
     try {
       parsed = new URL(trimmed);
     } catch (_) {
-      throw new Error("This doesn't look like a valid Moodle URL. Please enter your university portal address (e.g. moodle.university.edu).");
+      throw new Error("This doesn't look like a valid Plaksha LMS address.");
     }
     if (parsed.protocol !== "https:") {
-      throw new Error("Moodle connections require HTTPS. Please use an https:// portal URL.");
+      throw new Error("Plaksha LMS connections require HTTPS.");
     }
     const host = (parsed.hostname || "").toLowerCase();
     if (host === "dle.plaksha.edu.in" || host === "lms.plaksha.edu.in") {
@@ -74,18 +75,6 @@ class MoodleAPI {
       return PLAKSHA_BASE_URL;
     }
     throw new Error("This Plaksha-only build connects to lms.plaksha.edu.in.");
-  }
-
-  /**
-   * Origin (scheme+host+port) for chrome.permissions requests.
-   * Permissions are origin-scoped; installation subpath is enforced separately.
-   */
-  static originForPermission(normalizedUrl) {
-    try {
-      return new URL(normalizedUrl).origin;
-    } catch (_) {
-      return null;
-    }
   }
 
   /**
@@ -139,10 +128,6 @@ class MoodleAPI {
       pad(d.getUTCSeconds()) +
       "Z"
     );
-  }
-
-  static siteKeyFor(normalizedUrl) {
-    return normalizedUrl;
   }
 
   /**
@@ -294,42 +279,6 @@ class MoodleAPI {
     return sites;
   }
 
-  static async ensureSiteBucket(siteKey) {
-    if (!siteKey) return;
-    try {
-      if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
-      const stored = await chrome.storage.local.get(["sites"]);
-      const sites = (stored.sites && typeof stored.sites === "object") ? stored.sites : {};
-      if (!sites[siteKey]) {
-        sites[siteKey] = __emptySiteData();
-        await chrome.storage.local.set({ sites });
-      }
-    } catch (_) {}
-  }
-
-  static async migrateLegacyToSite(siteKey, preloaded) {
-    try {
-      if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
-      const stored = preloaded || await chrome.storage.local.get(["sites", "moodleData", "completedDeadlines", "firedReminders", "firedDigestItems", "lastServerSync", "lastServerAttempt", "backoffUntil", "failureCount", "institutionName"]);
-      const sites = (stored.sites && typeof stored.sites === "object") ? { ...stored.sites } : {};
-      if (sites[siteKey]) {
-        // Bucket already exists; merge any leftover legacy top-level state into
-        // it (v2.1 -> v2.2 upgrades that kept moodleBaseUrl) instead of dropping it.
-        await MoodleAPI.mergeLegacyIntoBucket(siteKey, sites, stored);
-        await chrome.storage.local.set({ sites, moodleBaseUrl: siteKey });
-        return;
-      }
-      const bucket = __emptySiteData();
-      MoodleAPI.fillBucketFromLegacy(bucket, stored);
-      sites[siteKey] = bucket;
-      await chrome.storage.local.set({ sites, moodleBaseUrl: siteKey });
-      // Remove legacy top-level academic state so future reads are strictly per-site.
-      try {
-        await chrome.storage.local.remove(["moodleData", "completedDeadlines", "firedReminders", "firedDigestItems", "lastServerSync", "lastServerAttempt", "backoffUntil", "failureCount", "institutionName"]);
-      } catch (_) {}
-    } catch (_) {}
-  }
-
   /** Copy legacy top-level fields into a bucket (preserves deadlines, courses,
    * completed items, fired reminders, sync timestamps, backoff state). */
   static fillBucketFromLegacy(bucket, stored) {
@@ -390,6 +339,14 @@ class MoodleAPI {
    */
   static async getBaseUrl() {
     try {
+      return await MoodleAPI._withStorageLock(() => MoodleAPI._getBaseUrlLocked());
+    } catch (_) {
+      return this._hasLoadedBaseUrl ? this._cachedBaseUrl : PLAKSHA_BASE_URL;
+    }
+  }
+
+  static async _getBaseUrlLocked() {
+    try {
       if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
         return this._hasLoadedBaseUrl ? this._cachedBaseUrl : PLAKSHA_BASE_URL;
       }
@@ -430,28 +387,6 @@ class MoodleAPI {
     }
   }
 
-  /**
-   * Set active base URL. Plaksha-only: dle/lms inputs canonicalize to the
-   * LMS root; anything else throws. Kept so shared callers keep working.
-   */
-  static async setBaseUrl(rawUrl, customInstitutionName = null) {
-    const normalized = this.canonicalSiteUrl(this.normalizeBaseUrl(rawUrl));
-    this._cachedBaseUrl = normalized;
-    this._hasLoadedBaseUrl = true;
-
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      const stored = await chrome.storage.local.get(["sites"]);
-      const sites = (stored.sites && typeof stored.sites === "object") ? { ...stored.sites } : {};
-      MoodleAPI._mergePlakshaBuckets(sites);
-      if (!sites[normalized]) {
-        sites[normalized] = __emptySiteData();
-      }
-      sites[normalized].institutionName = "Plaksha University";
-      await chrome.storage.local.set({ moodleBaseUrl: normalized, sites });
-    }
-    return normalized;
-  }
-
   static async getSiteData(siteKey) {
     const empty = __emptySiteData();
     if (!siteKey) return empty;
@@ -477,25 +412,48 @@ class MoodleAPI {
     }
   }
 
-  static async saveSiteData(siteKey, partial) {
-    if (!siteKey || !partial || typeof partial !== "object") return;
-    try {
-      if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
-      const stored = await chrome.storage.local.get(["sites"]);
-      const sites = (stored.sites && typeof stored.sites === "object") ? { ...stored.sites } : {};
-      const prev = (sites[siteKey] && typeof sites[siteKey] === "object") ? sites[siteKey] : __emptySiteData();
-      sites[siteKey] = { ...prev, ...partial };
-      await chrome.storage.local.set({ sites });
-    } catch (_) {}
+  /**
+   * Run fn with exclusive access to extension storage. The Web Lock is shared
+   * across the service worker and popup, so read-modify-write cycles on the
+   * `sites` map never interleave. Falls back to an in-context queue.
+   */
+  static _withStorageLock(fn) {
+    if (typeof navigator !== "undefined" && navigator.locks && typeof navigator.locks.request === "function") {
+      return navigator.locks.request("neverlate-storage", fn);
+    }
+    const next = MoodleAPI._writeChain.then(fn, fn);
+    MoodleAPI._writeChain = next.catch(() => {});
+    return next;
   }
 
-  static async getActiveSiteData() {
-    const siteKey = await this.getBaseUrl();
-    if (!siteKey) {
-      return { siteKey: null, data: __emptySiteData() };
+  /**
+   * Atomic read-modify-write of one site bucket. `updater(prevBucket)` must be
+   * synchronous and return a partial object to merge (or a falsy value to skip
+   * the write). Resolves to the resulting bucket, or null on storage failure.
+   * Never call other storage helpers from inside the updater.
+   */
+  static async updateSiteData(siteKey, updater) {
+    if (!siteKey || typeof updater !== "function") return null;
+    if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return null;
+    try {
+      return await MoodleAPI._withStorageLock(async () => {
+        const stored = await chrome.storage.local.get(["sites"]);
+        const sites = (stored.sites && typeof stored.sites === "object") ? { ...stored.sites } : {};
+        const prev = (sites[siteKey] && typeof sites[siteKey] === "object") ? sites[siteKey] : __emptySiteData();
+        const partial = updater(prev);
+        if (!partial || typeof partial !== "object") return prev;
+        sites[siteKey] = { ...prev, ...partial };
+        await chrome.storage.local.set({ sites });
+        return sites[siteKey];
+      });
+    } catch (_) {
+      return null;
     }
-    const data = await this.getSiteData(siteKey);
-    return { siteKey, data };
+  }
+
+  static async saveSiteData(siteKey, partial) {
+    if (!siteKey || !partial || typeof partial !== "object") return;
+    await MoodleAPI.updateSiteData(siteKey, () => partial);
   }
 
   /**
@@ -606,10 +564,6 @@ class MoodleAPI {
       return item.stableKey;
     }
     return this.buildStableKey(site, item);
-  }
-
-  static getNotifyKey(item, siteKey, alertType = "2h") {
-    return this.getReminderKey(siteKey, item, alertType);
   }
 
   static getDigestKey(siteKey, dueDateStr) {
@@ -797,6 +751,47 @@ class MoodleAPI {
     };
   }
 
+  /**
+   * Prune fired-reminder memory. Reminder keys embed their deadline timestamp
+   * and stay "live" until a grace period after that deadline; otherwise the
+   * 7-day exam heads-up (still inside its window) would fire again once the
+   * key aged out. Keys without a parsable deadline fall back to fire time.
+   * Returns { fired, pruned } without mutating the input.
+   */
+  static pruneFiredReminders(fired, nowMs = Date.now(), graceMs = 48 * 60 * 60 * 1000) {
+    const out = {};
+    let pruned = false;
+    for (const k of Object.keys(fired || {})) {
+      const firedAt = fired[k];
+      if (typeof firedAt !== "number") {
+        pruned = true;
+        continue;
+      }
+      const parsed = this.parseReminderKey(k);
+      const keepUntil = parsed ? parsed.timesort * 1000 + graceMs : firedAt + graceMs;
+      if (nowMs > keepUntil) {
+        pruned = true;
+        continue;
+      }
+      out[k] = firedAt;
+    }
+    return { fired: out, pruned };
+  }
+
+  /**
+   * Course-code match on whole tokens only ("AI3022" or bare "3022" must not
+   * match inside longer digit runs such as an activity id in a URL).
+   */
+  static courseCodeMatchesText(shortname, text) {
+    const codeMatch = String(shortname || "").toLowerCase().match(/([a-z]{2,5})\s*[-_]?\s*(\d{3,5})/);
+    if (!codeMatch) return false;
+    const hay = String(text || "").toLowerCase();
+    const [, prefix, num] = codeMatch;
+    const withPrefix = new RegExp(`(?<![a-z0-9])${prefix}[\\s_-]*${num}(?![0-9])`);
+    const bare = new RegExp(`(?<![a-z0-9])${num}(?![0-9])`);
+    return withPrefix.test(hay) || bare.test(hay);
+  }
+
   static reminderLeadLabel(reminderType = "2h") {
     const labels = {
       "30m": "in 30 minutes",
@@ -963,15 +958,24 @@ class MoodleAPI {
    */
   static cleanHtmlText(raw) {
     if (!raw || typeof raw !== "string") return "";
+    const decodeCodePoint = (n) => {
+      try {
+        return (n > 0 && n <= 0x10FFFF) ? String.fromCodePoint(n) : " ";
+      } catch (_) {
+        return " ";
+      }
+    };
     return raw
       .substring(0, 300)
       .replace(/<[^>]+>/g, " ")
-      .replace(/&amp;/gi, "&")
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => decodeCodePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d) => decodeCodePoint(parseInt(d, 10)))
       .replace(/&nbsp;/gi, " ")
       .replace(/&quot;/gi, '"')
-      .replace(/&#039;/gi, "'")
+      .replace(/&apos;/gi, "'")
       .replace(/&lt;/gi, "<")
       .replace(/&gt;/gi, ">")
+      .replace(/&amp;/gi, "&")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -1190,14 +1194,15 @@ class MoodleAPI {
         userName = this.cleanHtmlText(userMatch[1]).substring(0, 100);
       }
 
-      // Require positive Moodle session evidence. Custom SSO gateway pages can
-      // live on the same origin and return HTTP 200 without being Moodle.
+      // Same-origin 200 page with neither a session key nor a user name: we
+      // can't tell a signed-out gateway from a Moodle markup change. Treat it
+      // as inconclusive so the cached data is kept instead of being purged.
       if (!sesskey && !userMatch) {
         return {
           isLoggedIn: false,
-          verifiedLoggedOut: true,
-          ssoRedirect: true,
-          error: "Sign in through your university portal",
+          transientFailure: true,
+          ambiguousSession: true,
+          error: "Couldn't confirm your Plaksha LMS session. Using offline cache.",
           baseUrl
         };
       }
@@ -1369,8 +1374,9 @@ class MoodleAPI {
           courseShortName = courseName.split(":")[0].trim();
         }
 
-        // 4. Extract Timesort
-        let timesort = Math.floor(Date.now() / 1000) + 86400;
+        // 4. Extract Timesort. Never invent a due date: an event without a
+        // parsable time is skipped instead of becoming a fake deadline.
+        let timesort = null;
         const timeParamMatch = fullBlock.match(/time=([0-9]{9,11})/i) || fullBlock.match(/data-timestamp=["']([0-9]{9,11})["']/i);
         if (timeParamMatch) {
           timesort = parseInt(timeParamMatch[1], 10);
@@ -1384,6 +1390,7 @@ class MoodleAPI {
             }
           }
         }
+        if (timesort === null) continue;
 
         const eventIdMatch = fullBlock.match(/data-event-id=["'](\d+)["']/i);
         const stableId = eventIdMatch
@@ -1564,19 +1571,31 @@ class MoodleAPI {
         // Explicitly verified logout — purge THIS SITE's Moodle academic data
         // only. Student-created manual deadlines are local records, not
         // server state, so they survive logout.
-        const prevDeadlines = (siteData.moodleData && Array.isArray(siteData.moodleData.deadlines))
-          ? siteData.moodleData.deadlines.filter((d) => d && this.isManualItem(d))
-          : [];
-        const loggedOutData = {
-          user: { isLoggedIn: false, name: null },
-          institutionName: institutionName,
-          moodleBaseUrl: baseUrl,
-          courses: [],
-          deadlines: prevDeadlines,
-          lastSynced: Date.now()
-        };
-
-        await this.saveSiteData(baseUrl, { moodleData: loggedOutData });
+        let loggedOutData = null;
+        await this.updateSiteData(baseUrl, (prev) => {
+          const prevDeadlines = (prev.moodleData && Array.isArray(prev.moodleData.deadlines))
+            ? prev.moodleData.deadlines.filter((d) => d && this.isManualItem(d))
+            : [];
+          loggedOutData = {
+            user: { isLoggedIn: false, name: null },
+            institutionName: institutionName,
+            moodleBaseUrl: baseUrl,
+            courses: [],
+            deadlines: prevDeadlines,
+            lastSynced: Date.now()
+          };
+          return { moodleData: loggedOutData };
+        });
+        if (!loggedOutData) {
+          loggedOutData = {
+            user: { isLoggedIn: false, name: null },
+            institutionName: institutionName,
+            moodleBaseUrl: baseUrl,
+            courses: [],
+            deadlines: [],
+            lastSynced: Date.now()
+          };
+        }
 
         return {
           success: false,
@@ -1668,7 +1687,7 @@ class MoodleAPI {
           const fName = (c.fullname || "").toLowerCase();
           const dShort = (d.courseShortName || "").toLowerCase();
           const dFull = (d.courseName || "").toLowerCase();
-          const dText = `${d.name || ""} ${d.activityname || ""} ${dShort} ${dFull} ${d.url || ""}`.toLowerCase();
+          const dText = `${d.name || ""} ${d.activityname || ""} ${dShort} ${dFull}`.toLowerCase();
 
           if (
             (dShort && sName && (dShort === sName || sName.includes(dShort) || dShort.includes(sName))) ||
@@ -1680,15 +1699,10 @@ class MoodleAPI {
             break;
           }
 
-          // Course code matching (e.g. "AI3022" or "3022" or "CS2102")
-          const codeMatch = sName.match(/([a-z]{2,5})\s*[-_]?\s*(\d{3,5})/i);
-          if (codeMatch) {
-            const prefix = codeMatch[1].toLowerCase();
-            const num = codeMatch[2];
-            if (dText.includes(prefix + num) || dText.includes(num)) {
-              matchedCourse = c;
-              break;
-            }
+          // Course code matching on whole tokens (e.g. "AI3022", "CS2102")
+          if (this.courseCodeMatchesText(sName, dText)) {
+            matchedCourse = c;
+            break;
           }
         }
       }
@@ -1728,20 +1742,6 @@ class MoodleAPI {
     }
     deadlines = this.dedupeDeadlines(deadlines, baseUrl);
 
-    // Preserve student-created manual deadlines across Moodle syncs.
-    const prevDeadlines = (siteData.moodleData && Array.isArray(siteData.moodleData.deadlines))
-      ? siteData.moodleData.deadlines
-      : [];
-    const manualKept = prevDeadlines.filter((d) => d && this.isManualItem(d));
-    const haveKeys = new Set(deadlines.map((d) => d && d.stableKey).filter(Boolean));
-    for (const m of manualKept) {
-      if (!m.stableKey) m.stableKey = this.buildStableKey(baseUrl, m);
-      if (!haveKeys.has(m.stableKey)) {
-        deadlines.push(m);
-        haveKeys.add(m.stableKey);
-      }
-    }
-
     deadlines.sort((a, b) => a.timesort - b.timesort);
     const finalCourses = Array.from(coursesMap.values()).slice(0, 50);
 
@@ -1754,13 +1754,33 @@ class MoodleAPI {
       moodleBaseUrl: baseUrl,
       lastSynced: Date.now(),
       courses: finalCourses,
-      deadlines: deadlines.slice(0, 100)
+      deadlines: []
     };
 
-    await this.saveSiteData(baseUrl, {
-      moodleData: resultData,
-      institutionName: institutionName
+    // Merge student-created manual deadlines from the LATEST stored bucket
+    // (inside the storage lock) so entries added/edited/deleted while this
+    // sync was in flight are neither lost nor resurrected.
+    const saved = await this.updateSiteData(baseUrl, (prev) => {
+      const prevDeadlines = (prev.moodleData && Array.isArray(prev.moodleData.deadlines))
+        ? prev.moodleData.deadlines
+        : [];
+      const merged = deadlines.slice();
+      const haveKeys = new Set(merged.map((d) => d && d.stableKey).filter(Boolean));
+      for (const m of prevDeadlines) {
+        if (!m || !this.isManualItem(m)) continue;
+        if (!m.stableKey) m.stableKey = this.buildStableKey(baseUrl, m);
+        if (!haveKeys.has(m.stableKey)) {
+          merged.push(m);
+          haveKeys.add(m.stableKey);
+        }
+      }
+      merged.sort((a, b) => a.timesort - b.timesort);
+      resultData.deadlines = merged.slice(0, 100);
+      return { moodleData: resultData, institutionName: institutionName };
     });
+    if (!saved) {
+      resultData.deadlines = deadlines.slice(0, 100);
+    }
 
     return {
       success: true,

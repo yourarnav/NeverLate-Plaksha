@@ -1,10 +1,11 @@
 {
   "name": "neverlate-plaksha-tracker",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "private": true,
-  "description": "NeverLate Plaksha-Only — fixed single-site deadline tracker for Plaksha LMS (Chrome extension)",
+  "description": "NeverLate Plaksha-Only \u2014 fixed single-site deadline tracker for Plaksha LMS (Chrome extension)",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
-    "package": "bash scripts/package-plaksha-only.sh"
+    "package": "bash scripts/package-plaksha-only.sh",
+    "test": "node --test tests/"
   }
 }

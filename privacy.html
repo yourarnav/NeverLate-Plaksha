@@ -83,35 +83,33 @@
   <main>
     <p class="brand">NeverLate</p>
     <h1>Privacy Policy</h1>
-    <p class="effective">Effective September 8, 2026</p>
+    <p class="effective">Effective October 4, 2026</p>
 
-    <p>NeverLate is an independent Chrome extension that helps students track academic deadlines from a university portal they choose to connect. NeverLate has no developer backend, analytics, or advertising, and does not sell user data.</p>
+    <p>NeverLate is an independent Chrome extension that helps Plaksha University students track academic deadlines from the Plaksha LMS (<strong>lms.plaksha.edu.in</strong>, and its legacy address <strong>dle.plaksha.edu.in</strong>). NeverLate has no developer backend, analytics, or advertising, and does not sell user data.</p>
 
     <h2>Data handled</h2>
-    <p>After you click <strong>Connect</strong> and approve a specific HTTPS portal, NeverLate may process the institution and portal address; your display name; course names, identifiers, links, deadlines, due dates, and related academic metadata; a Moodle session key used transiently for same-portal requests; the approved portal page address needed to validate extension messages; and your manual deadlines, completion status, reminder history, theme, alert, and calendar-export preferences.</p>
+    <p>While you are signed in to the Plaksha LMS, NeverLate may process the institution name; your display name; course names, identifiers, links, deadlines, due dates, and related academic metadata; a Moodle session key used transiently for same-site requests; the LMS page address needed to validate extension messages; and your manual deadlines, completion status, reminder history, theme, alert, and calendar-export preferences.</p>
 
     <h2>Storage and retention</h2>
     <p>Course and deadline data, settings, completion status, and reminder history are stored locally on your device with <strong>chrome.storage.local</strong>. The developer cannot access that storage. Session keys are kept only in memory for a request and are never stored. Local data remains until replaced during synchronization, cleared through Chrome, or removed when the extension is uninstalled; manual deadlines can also be deleted individually.</p>
 
     <h2>Network requests and sharing</h2>
-    <p>NeverLate makes background requests only to the HTTPS university portal you explicitly connect, using your existing browser session. It does not send portal data to the developer or to a developer-operated server.</p>
+    <p>A small content script runs on Plaksha LMS pages to read your display name and, on the dashboard and course-list pages, your course list; it passes this only to NeverLate's own background worker on your device. NeverLate makes background requests only to the Plaksha LMS over HTTPS, using your existing browser session. It does not send portal data to the developer or to a developer-operated server.</p>
     <p>When you explicitly choose Google Calendar or Outlook 365 export, NeverLate opens that provider's event-composition page with the selected deadline's title, course, date and time, optional location, and—if you keep the link option enabled—the activity link. That provider then handles the information under its privacy terms. An <strong>.ics</strong> export creates a local file.</p>
 
     <h2>Permissions</h2>
     <ul>
       <li><strong>Storage:</strong> saves local data and preferences.</li>
       <li><strong>Alarms:</strong> schedules low-frequency refreshes and requested reminders.</li>
-      <li><strong>Scripting:</strong> registers course discovery only on the connected portal.</li>
-      <li><strong>Active tab:</strong> reads the current tab's address only when you choose Current Tab during setup.</li>
-      <li><strong>Notifications:</strong> displays reminders only after you opt in.</li>
-      <li><strong>Optional website access:</strong> grants access only to the exact HTTPS portal origin you select and approve.</li>
+      <li><strong>Notifications (optional):</strong> displays reminders only after you opt in.</li>
+      <li><strong>Website access:</strong> limited to <strong>lms.plaksha.edu.in</strong> and <strong>dle.plaksha.edu.in</strong>, for syncing deadlines and the content script described above. NeverLate has no access to any other website.</li>
     </ul>
 
     <h2>Security and Limited Use</h2>
-    <p>NeverLate accepts only HTTPS portals, restricts messages and activity links to the approved origin and Moodle installation path, removes known session or access-token parameters before storing links, and does not execute remotely hosted code. Its use of data obtained from Chrome APIs and connected websites complies with the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
+    <p>NeverLate accepts only HTTPS Plaksha LMS addresses, restricts messages and activity links to the Plaksha LMS origin, removes known session or access-token parameters before storing links, and does not execute remotely hosted code. Its use of data obtained from Chrome APIs and connected websites complies with the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
 
     <h2>Your choices</h2>
-    <p>You control which portal is connected, whether notifications are enabled, whether calendar exports include activity links, and whether any calendar export is initiated. Removing NeverLate deletes its local extension storage through Chrome.</p>
+    <p>You control whether notifications are enabled, whether calendar exports include activity links, and whether any calendar export is initiated. Removing NeverLate deletes its local extension storage through Chrome.</p>
 
     <h2>Contact and trademark</h2>
     <p>Questions or privacy requests can be submitted through the <a href="https://github.com/yourarnav/BetterMoodle/issues" target="_blank" rel="noopener noreferrer">project issue tracker</a>.</p>

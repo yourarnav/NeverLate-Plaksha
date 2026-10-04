@@ -40,40 +40,34 @@
       }
     }
 
-    // 3. Document title delimiters
-    const docTitle = document.title;
-    if (docTitle) {
-      const delimiters = ["|", " - ", ":", " — "];
-      for (const delim of delimiters) {
-        if (docTitle.includes(delim)) {
-          const parts = docTitle.split(delim).map(p => cleanText(p)).filter(Boolean);
-          const generic = /^(dashboard|my courses|courses|home|site home|log in|login|calendar|upcoming events|profile|preferences|moodle)$/i;
-          const candidate = parts.find(p => !generic.test(p) && p.length > 2);
-          if (candidate) return candidate;
-        }
-      }
-    }
+    // Page titles vary per page (assignments, forums...), so they are not a
+    // reliable institution name; fall back to the fixed site name.
+    return "Plaksha University";
+  }
 
-    // 4. Hostname fallback
-    const host = window.location.hostname.toLowerCase();
-    if (host.includes("plaksha.edu.in")) return "Plaksha University";
-    if (host.includes("iitb.ac.in")) return "IIT Bombay";
-    if (host.includes("iitd.ac.in")) return "IIT Delhi";
-    if (host.includes("bits-pilani.ac.in")) return "BITS Pilani";
-    if (host.includes("nus.edu")) return "NUS";
-
-    return null;
+  // Only the dashboard / "My courses" pages list the student's own courses.
+  // Every other page links to arbitrary courses (catalog, search, content).
+  function isCourseListPage() {
+    const p = window.location.pathname.replace(/\/+$/, "");
+    return p === "/my" || p === "/my/index.php" || p === "/my/courses.php";
   }
 
   function extractCoursesFromPage() {
+    if (!isCourseListPage()) return [];
     const courseLinks = document.querySelectorAll('a[href*="/course/view.php?id="]');
     const coursesMap = new Map();
 
-    courseLinks.forEach((link) => {
-      const match = link.href.match(/\/course\/view\.php\?id=([0-9]{1,10})/);
-      if (!match) return;
-      const cid = match[1];
-      if (cid === "1") return; // Skip Site Home
+    for (const link of courseLinks) {
+      if (coursesMap.size >= 50) break;
+      let parsed;
+      try {
+        parsed = new URL(link.href);
+      } catch (_) {
+        continue;
+      }
+      if (parsed.origin !== window.location.origin || parsed.pathname !== "/course/view.php") continue;
+      const cid = parsed.searchParams.get("id");
+      if (!cid || !/^[0-9]{1,10}$/.test(cid) || cid === "1") continue; // skip Site Home
 
       let name = link.innerText || link.textContent || "";
       name = name
@@ -94,12 +88,10 @@
           id: parseInt(cid, 10),
           fullname: name,
           shortname: shortname,
-          viewurl: link.href
+          viewurl: `${window.location.origin}/course/view.php?id=${cid}`
         });
-
-        if (coursesMap.size >= 50) return;
       }
-    });
+    }
 
     return Array.from(coursesMap.values());
   }

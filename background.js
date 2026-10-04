@@ -33,15 +33,6 @@ const inFlightSyncBySite = new Map();
 let alertProcessingPromise = null;
 
 /**
- * Plaksha-only build: content scripts are statically declared in the
- * manifest for both Plaksha hosts, so no dynamic registration is needed.
- * Kept as a no-op for shared-code compatibility.
- */
-async function registerDynamicContentScript(targetBaseUrl) {
-  return true;
-}
-
-/**
  * Centralized safe synchronization controller (per-site isolated).
  * - Attempt throttle is NEVER bypassable (prevents hammering Moodle).
  * - `force` bypasses ONLY the successful-cache cooldown (repair path).
@@ -62,11 +53,26 @@ async function safeSync(isManual = false, force = false) {
     };
   }
 
+  // Check-and-register must happen in the same synchronous turn (no await
+  // in between) or concurrent triggers can each start their own sync.
   if (inFlightSyncBySite.has(activeSite)) {
     console.log("[Background] Reusing existing in-flight sync operation for site");
     return inFlightSyncBySite.get(activeSite);
   }
 
+  const lockedPromise = _runSafeSync(activeSite, isManual, force)
+    .catch((err) => {
+      console.warn("[Background] safeSync failed:", err);
+      return { success: false, error: err.message, siteKey: activeSite };
+    })
+    .finally(() => {
+      inFlightSyncBySite.delete(activeSite);
+    });
+  inFlightSyncBySite.set(activeSite, lockedPromise);
+  return lockedPromise;
+}
+
+async function _runSafeSync(activeSite, isManual, force) {
   const siteData = await MoodleAPI.getSiteData(activeSite);
   const now = Date.now();
   const elapsedSinceAttempt = now - (siteData.lastServerAttempt || 0);
@@ -103,7 +109,10 @@ async function safeSync(isManual = false, force = false) {
 
   // 2. Success cooldown: bypassable via explicit force (repair) or corrupted cache.
   // Manual success cooldown is 3 minutes; background scheduled sync is 120 minutes.
-  const shouldBypassSuccessCooldown = (force === true) || hasCorruptedLegacyData;
+  // Placeholder/"General" items can persist legitimately (unmatched course), so a
+  // corrupted-looking cache may only repair itself once per 10 minutes instead of
+  // re-syncing on every page load.
+  const shouldBypassSuccessCooldown = (force === true) || (hasCorruptedLegacyData && elapsedSinceSuccess >= 10 * 60 * 1000);
   if (!shouldBypassSuccessCooldown) {
     const requiredSuccessCooldown = isManual ? (3 * 60 * 1000) : (120 * 60 * 1000);
     if (siteData.lastServerSync && elapsedSinceSuccess < requiredSuccessCooldown) {
@@ -125,48 +134,36 @@ async function safeSync(isManual = false, force = false) {
 
   // Pass the captured site explicitly. syncAll must never resolve the active
   // site a second time after the user has had a chance to switch universities.
-  const promise = MoodleAPI.syncAll(siteAtStart)
-    .then(async (res) => {
-      res = res || {};
-      res.siteKey = siteAtStart;
-      // Stale-switch guard: only touch badge/alerts when this sync's site is
-      // still the active university. Cache writes already landed in the
-      // correct per-site bucket inside syncAll().
-      const stillActive = (await MoodleAPI.getBaseUrl()) === siteAtStart;
-      if (res && res.success && res.data) {
-        await MoodleAPI.saveSiteData(siteAtStart, { lastServerSync: Date.now() });
-        if (stillActive) {
-          await updateBadgeAndTooltip(res.data.deadlines, res.data.institutionName, siteAtStart);
-          await processDueAlerts();
-        } else {
-          console.log("[Background] Sync finished for a non-active site; skipping badge/alert update");
-        }
-      } else if (res && res.transientFailure && res.data) {
-        // Network/server temporary issue: preserve existing badge from THIS site's cache.
-        if (stillActive) {
-          await updateBadgeAndTooltip(res.data.deadlines || [], res.data.institutionName, siteAtStart);
-        }
-      } else if (res && res.verifiedLoggedOut) {
-        if (stillActive) {
-          await updateBadgeAndTooltip([], res.data?.institutionName, siteAtStart);
-        }
-      } else if (res && res.notConfigured) {
-        if (stillActive) {
-          await updateBadgeAndTooltip([], null, siteAtStart);
-        }
-      }
-      return res;
-    })
-    .catch((err) => {
-      console.warn("[Background] safeSync failed:", err);
-      return { success: false, error: err.message, siteKey: siteAtStart };
-    })
-    .finally(() => {
-      inFlightSyncBySite.delete(siteAtStart);
-    });
-
-  inFlightSyncBySite.set(activeSite, promise);
-  return promise;
+  let res = await MoodleAPI.syncAll(siteAtStart);
+  res = res || {};
+  res.siteKey = siteAtStart;
+  // Stale-switch guard: only touch badge/alerts when this sync's site is
+  // still the active university. Cache writes already landed in the
+  // correct per-site bucket inside syncAll().
+  const stillActive = (await MoodleAPI.getBaseUrl()) === siteAtStart;
+  if (res.success && res.data) {
+    await MoodleAPI.saveSiteData(siteAtStart, { lastServerSync: Date.now() });
+    if (stillActive) {
+      await updateBadgeAndTooltip(res.data.deadlines, res.data.institutionName, siteAtStart);
+      await processDueAlerts();
+    } else {
+      console.log("[Background] Sync finished for a non-active site; skipping badge/alert update");
+    }
+  } else if (res.transientFailure && res.data) {
+    // Network/server temporary issue: preserve existing badge from THIS site's cache.
+    if (stillActive) {
+      await updateBadgeAndTooltip(res.data.deadlines || [], res.data.institutionName, siteAtStart);
+    }
+  } else if (res.verifiedLoggedOut) {
+    if (stillActive) {
+      await updateBadgeAndTooltip([], res.data?.institutionName, siteAtStart);
+    }
+  } else if (res.notConfigured) {
+    if (stillActive) {
+      await updateBadgeAndTooltip([], null, siteAtStart);
+    }
+  }
+  return res;
 }
 
 function formatCountdownString(timesort) {
@@ -568,15 +565,11 @@ async function _internalProcessDueAlerts() {
   const nowMs = Date.now();
   const nowDate = new Date(nowMs);
 
-  // Prune keys older than 48 hours
-  const PRUNE_WINDOW_MS = 48 * 60 * 60 * 1000;
-  let pruned = false;
-  for (const k in fired) {
-    if (typeof fired[k] !== "number" || (nowMs - fired[k] > PRUNE_WINDOW_MS)) {
-      delete fired[k];
-      pruned = true;
-    }
-  }
+  // Prune reminder memory only after each deadline is well past (see
+  // pruneFiredReminders): age-based pruning re-fired the 7-day exam heads-up.
+  const pruneResult = MoodleAPI.pruneFiredReminders(fired, nowMs);
+  fired = pruneResult.fired;
+  const pruned = pruneResult.pruned;
 
   let digestItems = (siteData.firedDigestItems && typeof siteData.firedDigestItems === "object")
     ? { ...siteData.firedDigestItems }
@@ -931,14 +924,30 @@ async function isAuthorizedMoodleSender(senderUrl) {
   }
 }
 
-// Static content scripts cover both Plaksha hosts — nothing to register.
-async function initDynamicScript() {
-  return true;
+// Only the dashboard / "My courses" pages list the student's own courses.
+// Other pages (catalog, search, course content) link to arbitrary courses.
+function isCourseListPath(senderUrl) {
+  try {
+    const p = new URL(senderUrl).pathname.replace(/\/+$/, "");
+    return p === "/my" || p === "/my/index.php" || p === "/my/courses.php";
+  } catch (_) {
+    return false;
+  }
 }
+
+function namesLookSame(a, b) {
+  const norm = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return true;
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+const ACCOUNT_MISMATCH_SYNC_GAP_MS = 10 * 60 * 1000;
+let lastAccountMismatchSyncAt = 0;
 
 // Service worker startup execution
 ensureSyncAlarm();
-initDynamicScript();
 processDueAlerts();
 
 // Seamless pickup: shortly after any Plaksha LMS page finishes loading,
@@ -971,7 +980,6 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onStartup)
   chrome.runtime.onStartup.addListener(async () => {
     try {
       await processDueAlerts();
-      await initDynamicScript();
     } catch (err) {
       console.warn("[Background] onStartup error:", err);
     }
@@ -986,7 +994,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await ensureSyncAlarm();
     // Fixed Plaksha site: pointer + bucket always exist after getBaseUrl().
     const activeSite = await MoodleAPI.getBaseUrl();
-    await initDynamicScript();
 
     // Display active site's cache only (never another site's).
     if (activeSite) {
@@ -1040,18 +1047,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   const isInternalExtension = sender.id === chrome.runtime.id && (!sender.url || sender.url.startsWith("chrome-extension://"));
-
-  // Plaksha-only build: static host permissions cover the LMS, so no
-  // runtime university registration is needed. Kept as a harmless no-op
-  // for callers shared with the multi-university build.
-  if (request.action === "REGISTER_UNIVERSITY_DOMAIN") {
-    if (!isInternalExtension) {
-      sendResponse({ success: false, error: "Unauthorized sender" });
-      return false;
-    }
-    sendResponse({ success: true });
-    return false;
-  }
 
   // SYNC_NOW: Only authorized from internal extension contexts
   if (request.action === "SYNC_NOW") {
@@ -1208,7 +1203,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // COURSES_DISCOVERED_FROM_PAGE: Authorized ONLY from currently configured Moodle origin.
+  // COURSES_DISCOVERED_FROM_PAGE: Authorized ONLY from the Plaksha LMS hosts.
+  // Passive page data is advisory: it can add enrolled courses seen on the
+  // dashboard/course list, but never renames or replaces what sync found.
   if (request.action === "COURSES_DISCOVERED_FROM_PAGE") {
     (async () => {
       try {
@@ -1230,14 +1227,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         const siteData = await MoodleAPI.getSiteData(activeSite);
-        let current = siteData.moodleData || { courses: [], deadlines: [], user: { isLoggedIn: false } };
-
+        const current = siteData.moodleData;
         const incomingName = typeof request.studentName === "string" ? request.studentName.substring(0, 100) : null;
+        const hasPageEvidence = Boolean(incomingName) || request.courses.length > 0;
 
-        // If extension currently believes student is logged out, but page shows student activity,
-        // immediately fire an authoritative background sync to verify session!
-        if (!current.user || !current.user.isLoggedIn) {
-          if (incomingName || (Array.isArray(request.courses) && request.courses.length > 0)) {
+        // Extension believes the student is signed out but the page shows an
+        // active session: verify authoritatively with a (throttled) sync.
+        if (!current || !current.user || !current.user.isLoggedIn) {
+          if (hasPageEvidence) {
             console.log("[Background] Active Moodle session observed on page while logged out. Triggering immediate auto-sync.");
             safeSync(false, false).catch(() => {});
             sendResponse({ success: true, triggeredSync: true });
@@ -1247,84 +1244,90 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return;
         }
 
-        if (incomingName && current.user && current.user.name && current.user.name !== incomingName) {
-          current.courses = [];
-          current.deadlines = [];
-        }
-
-        // Update institution name if discovered (per-site only)
-        if (request.institutionName && typeof request.institutionName === "string") {
-          const cleanInst = request.institutionName.trim().substring(0, 100);
-          if (cleanInst) {
-            current.institutionName = cleanInst;
-            await MoodleAPI.saveSiteData(activeSite, { institutionName: cleanInst });
+        // A different account on the page than the cached one: refresh from the
+        // server (rate-limited here and by safeSync) rather than trusting or
+        // wiping the cache.
+        if (incomingName && current.user.name && !namesLookSame(incomingName, current.user.name)) {
+          const nowMs = Date.now();
+          if (nowMs - lastAccountMismatchSyncAt > ACCOUNT_MISMATCH_SYNC_GAP_MS) {
+            lastAccountMismatchSyncAt = nowMs;
+            safeSync(false, true).catch(() => {});
           }
+          sendResponse({ success: true, triggeredSync: true });
+          return;
         }
 
-        let existingCourses = current.courses || [];
-        let mergedMap = new Map();
+        const acceptNewCourses = isCourseListPath(sender.url);
+        const cleanInst = (typeof request.institutionName === "string")
+          ? request.institutionName.trim().substring(0, 100)
+          : "";
 
-        existingCourses.forEach(c => {
-          if (c && c.id) mergedMap.set(String(c.id), c);
-        });
+        let changed = false;
+        let courseCount = 0;
+        const saved = await MoodleAPI.updateSiteData(activeSite, (prev) => {
+          const md = prev.moodleData;
+          if (!md || !md.user || !md.user.isLoggedIn) return null;
+          const next = { ...md };
+          const partial = {};
 
-        request.courses.slice(0, 50).forEach(c => {
-          if (c && typeof c.id === "number" && c.id > 1 && typeof c.fullname === "string") {
-            const cid = String(c.id);
-            const cleanFull = c.fullname.substring(0, 200);
-            const cleanShort = (c.shortname || cleanFull).substring(0, 30);
-            mergedMap.set(cid, {
-              id: c.id,
-              fullname: cleanFull,
-              shortname: cleanShort,
-              viewurl: c.viewurl || `${activeSite}/course/view.php?id=${c.id}`,
-              category: "Enrolled Course"
+          if (cleanInst && cleanInst !== md.institutionName) {
+            next.institutionName = cleanInst;
+            partial.institutionName = cleanInst;
+            changed = true;
+          }
+
+          const mergedMap = new Map();
+          (Array.isArray(md.courses) ? md.courses : []).forEach((c) => {
+            if (c && c.id) mergedMap.set(String(c.id), c);
+          });
+          if (acceptNewCourses) {
+            request.courses.slice(0, 50).forEach((c) => {
+              if (!c || typeof c.id !== "number" || c.id <= 1 || typeof c.fullname !== "string") return;
+              const cid = String(c.id);
+              if (mergedMap.has(cid) || mergedMap.size >= 50) return;
+              const cleanFull = c.fullname.substring(0, 200);
+              mergedMap.set(cid, {
+                id: c.id,
+                fullname: cleanFull,
+                shortname: (c.shortname || cleanFull).substring(0, 30),
+                viewurl: `${activeSite}/course/view.php?id=${c.id}`,
+                category: "Enrolled Course"
+              });
+              changed = true;
             });
           }
-        });
+          next.courses = Array.from(mergedMap.values()).slice(0, 50);
+          courseCount = next.courses.length;
 
-        // Reconcile and repair unlinked deadlines with discovered courses
-        if (Array.isArray(current.deadlines)) {
-          current.deadlines.forEach(d => {
-            if (!d) return;
-
-            if (!d.name || /^go to activity$/i.test(d.name) || /^view activity$/i.test(d.name)) {
-              if (d.activityname && !/^go to activity$/i.test(d.activityname)) {
-                d.name = d.activityname;
-              } else {
-                d.name = d.type === "quiz" ? "Quiz" : "Assignment";
-              }
-            }
-
-            if (!d.courseId || !mergedMap.has(String(d.courseId))) {
-              for (const [cid, c] of mergedMap.entries()) {
+          // Repair deadlines whose course link is missing using known courses.
+          if (Array.isArray(md.deadlines)) {
+            next.deadlines = md.deadlines.map((d) => {
+              if (!d || (d.courseId && mergedMap.has(String(d.courseId)))) return d;
+              for (const c of mergedMap.values()) {
                 const sName = (c.shortname || "").toLowerCase();
                 const fName = (c.fullname || "").toLowerCase();
                 const dShort = (d.courseShortName || "").toLowerCase();
                 const dFull = (d.courseName || "").toLowerCase();
-
                 if (
                   (dShort && sName && (dShort === sName || sName.includes(dShort) || dShort.includes(sName))) ||
                   (dFull && fName && (dFull === fName || fName.includes(dFull) || dFull.includes(fName))) ||
                   (dShort && fName && fName.includes(dShort)) ||
                   (dFull && sName && sName.includes(dFull))
                 ) {
-                  d.courseId = c.id;
-                  d.courseShortName = c.shortname || c.fullname;
-                  d.courseName = c.fullname || c.shortname;
-                  break;
+                  changed = true;
+                  return { ...d, courseId: c.id, courseShortName: c.shortname || c.fullname, courseName: c.fullname || c.shortname };
                 }
               }
-            }
-          });
-        }
+              return d;
+            });
+          }
 
-        current.courses = Array.from(mergedMap.values()).slice(0, 50);
-        if (incomingName) current.user.name = incomingName;
-        current.lastPageObservedAt = Date.now();
+          if (!changed) return null;
+          partial.moodleData = next;
+          return partial;
+        });
 
-        await MoodleAPI.saveSiteData(activeSite, { moodleData: current });
-        sendResponse({ success: true, count: current.courses.length });
+        sendResponse({ success: Boolean(saved), count: courseCount, changed });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }
