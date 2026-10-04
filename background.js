@@ -112,7 +112,10 @@ async function _runSafeSync(activeSite, isManual, force) {
   // Placeholder/"General" items can persist legitimately (unmatched course), so a
   // corrupted-looking cache may only repair itself once per 10 minutes instead of
   // re-syncing on every page load.
-  const shouldBypassSuccessCooldown = (force === true) || (hasCorruptedLegacyData && elapsedSinceSuccess >= 10 * 60 * 1000);
+  // A signed-out cache always bypasses it too: a purge leaves lastServerSync
+  // untouched, so without this a fresh login within the cooldown would not sync.
+  const cacheSaysSignedOut = !!siteData.moodleData && MoodleAPI.isLoggedOutData(siteData.moodleData);
+  const shouldBypassSuccessCooldown = (force === true) || cacheSaysSignedOut || (hasCorruptedLegacyData && elapsedSinceSuccess >= 10 * 60 * 1000);
   if (!shouldBypassSuccessCooldown) {
     const requiredSuccessCooldown = isManual ? (3 * 60 * 1000) : (120 * 60 * 1000);
     if (siteData.lastServerSync && elapsedSinceSuccess < requiredSuccessCooldown) {
