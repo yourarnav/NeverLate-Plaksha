@@ -12,14 +12,6 @@ canonical site is `https://lms.plaksha.edu.in`
 
 Host permission for both Plaksha hosts is granted at install, so the first sync just works.
 
-## What's different from the multi-university build
-
-- No university switcher, presets, or Current-Tab onboarding.
-- `getBaseUrl()` always returns the LMS root; old `dle` buckets and legacy caches migrate into it (Done marks, reminders, manual deadlines preserved).
-- Background auto-syncs (throttled: 10s manual / 45s auto attempt throttle, 3m/120m success cooldown) when a Plaksha page finishes loading.
-- Content scripts are statically declared in `manifest.json` for both Plaksha hosts. Course discovery only runs on the dashboard / "My courses" pages and never renames existing courses.
-- Storage writes go through a shared lock (`MoodleAPI.updateSiteData`) so concurrent syncs and popup edits don't lose data.
-- ICS export uses a 30-minute block ending at the deadline, matching Google Calendar.
 
 ## Tests
 
