@@ -126,3 +126,28 @@ test("syncAll keeps manual deadlines added while the sync was running", async ()
   const stored = await MoodleAPI.getSiteData(PLAKSHA_BASE_URL);
   assert.ok(stored.moodleData.deadlines.some((d) => d.id === manual.id));
 });
+
+test("exam wording is recognised for calendar-only events", () => {
+  const cls = (name, url = "") => MoodleAPI.classifyMoodleType({ name, url });
+  for (const n of ["Mid Term", "Mid-Sem Exam", "MidSem", "End Sem", "Endsem Exam", "End-Semester", "Final Exam", "Finals", "Test 1", "Class Test", "Viva"]) {
+    assert.equal(cls(n, `${PLAKSHA_BASE_URL}/calendar/view.php?view=day`), "exam", n);
+    assert.equal(cls(n), "exam", n);
+  }
+});
+
+test("exam detection does not hijack real activities", () => {
+  const assign = `${PLAKSHA_BASE_URL}/mod/assign/view.php?id=1`;
+  assert.equal(MoodleAPI.classifyMoodleType({ name: "Mid Term Project", url: assign }), "assignment");
+  assert.equal(MoodleAPI.classifyMoodleType({ name: "Final project submission", url: `${PLAKSHA_BASE_URL}/calendar/view.php` }), "assignment");
+  assert.equal(MoodleAPI.classifyMoodleType({ name: "Weekly Quiz 3", url: `${PLAKSHA_BASE_URL}/mod/quiz/view.php?id=2` }), "quiz");
+  assert.equal(MoodleAPI.classifyMoodleType({ name: "Problem Set 5" }), "assignment");
+});
+
+test("guessExamSubtype maps wording to kinds", () => {
+  assert.equal(MoodleAPI.guessExamSubtype("Mid Term"), "midsem");
+  assert.equal(MoodleAPI.guessExamSubtype("End Sem"), "endsem");
+  assert.equal(MoodleAPI.guessExamSubtype("Final Exam"), "endsem");
+  assert.equal(MoodleAPI.guessExamSubtype("Test 2"), "test");
+  assert.equal(MoodleAPI.guessExamSubtype("Viva"), "viva");
+  assert.equal(MoodleAPI.guessExamSubtype("Some Exam"), "other");
+});

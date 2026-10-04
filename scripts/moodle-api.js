@@ -677,6 +677,27 @@ class MoodleAPI {
     return "ASSIGNMENT";
   }
 
+  /** True for titles like "Mid Term", "Mid-Sem", "End Sem", "Final Exam", "Test 1", "Viva". */
+  static looksLikeExamName(rawName) {
+    const name = String(rawName || "").toLowerCase();
+    if (/\b(exams?|examination|viva|practicals?)\b/.test(name)) return true;
+    if (/\b(mid|end)[\s_-]*(sem(ester)?|term)\b/.test(name)) return true;
+    if (/\b(class|unit)\s+test\b|\btest[\s_-]*\d+\b/.test(name)) return true;
+    // "Final" alone is ambiguous ("Final project submission" is an assignment).
+    return /\bfinals?\b/.test(name) && !/\b(project|report|submission|assignment|presentation|paper|draft|essay|demo|code)\b/.test(name);
+  }
+
+  /** Best-effort exam kind from a title; "other" when nothing matches. */
+  static guessExamSubtype(rawName) {
+    const name = String(rawName || "").toLowerCase();
+    if (/\bmid[\s_-]*(sem(ester)?|term)\b/.test(name)) return "midsem";
+    if (/\b(end[\s_-]*(sem(ester)?|term)|finals?)\b/.test(name)) return "endsem";
+    if (/\bviva\b/.test(name)) return "viva";
+    if (/\bpracticals?\b/.test(name)) return "practical";
+    if (/\b(class|unit)\s+test\b|\btest[\s_-]*\d+\b/.test(name)) return "test";
+    return "other";
+  }
+
   /**
    * Normalize a raw Moodle module/event into one of the four academic types.
    * Uses existing metadata only (no extra server requests): modulename,
@@ -691,8 +712,8 @@ class MoodleAPI {
     if (mod === "quiz" || url.includes("/mod/quiz/")) return "quiz";
     if (mod === "exam" || url.includes("/mod/exam/") || eventType.includes("exam")) return "exam";
     if (mod === "assign" || mod === "assignment" || url.includes("/mod/assign/")) return "assignment";
-    if (/\bexam\b|\bmidsem\b|\bendsem\b|\bviva\b|\bpractical\b/.test(name) && (url.includes("/calendar/") || !url)) {
-      // Calendar-only event explicitly named as an exam (no activity URL).
+    if ((url.includes("/calendar/") || !url) && this.looksLikeExamName(name)) {
+      // Calendar-only event (e.g. added by a TA) with no activity URL.
       return "exam";
     }
     if (/\bquiz\b/.test(name)) return "quiz";
@@ -1413,7 +1434,7 @@ class MoodleAPI {
           location: null,
           actionName: type === "quiz" ? "View Quiz" : "View Assignment",
           type: type,
-          subtype: null,
+          subtype: type === "exam" ? this.guessExamSubtype(title) : null,
           source: "moodle",
           discoveredAt: Date.now()
         });
@@ -1503,7 +1524,7 @@ class MoodleAPI {
             location: null,
             actionName: ev.action ? this.cleanHtmlText(ev.action.name) : "View Activity",
             type: type,
-            subtype: null,
+            subtype: type === "exam" ? this.guessExamSubtype(cleanName) : null,
             source: "moodle",
             discoveredAt: Date.now()
           };
